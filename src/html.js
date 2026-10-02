@@ -1,0 +1,19 @@
+const {localeFor,translator}=require('./i18n');
+function getHtml({ scriptUri, styleUri, cspSource, nonce, language='ja' }) {
+  const locale=localeFor(language), t=translator(locale);
+  return `<!doctype html><html lang="${locale}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${cspSource}; img-src ${cspSource} data:; connect-src 'none';">
+<link rel="stylesheet" href="${styleUri}"><title>3MF G-code Preview</title></head><body>
+<header><strong>3MF G-code Preview</strong><select id="plate" aria-label="${t('plateSelect')}" disabled></select><button id="structure-toggle" aria-expanded="false" aria-controls="structure-popover" disabled>${t('structure')}</button><button id="fit">${t('fit')}</button><button id="top">${t('top')}</button><button id="iso">3D</button><button id="reload">${t('reload')}</button><section id="structure-popover" aria-label="${t('structureTitle')}" hidden><strong>${t('structureTitle')}</strong><div id="structure-tree"></div></section></header>
+<div id="status" role="status">${t('loading')}</div><div id="warning" role="status" hidden></div>
+<main><section id="viewport" aria-label="${t('viewport')}"><div id="hint">${t('hint')}</div></section>
+<aside id="layers"><strong>${t('displayLayers')}</strong><output id="layer-label">—</output>
+<div id="layer-slider" class="vertical"><span id="upper-caption">${t('layerRange')}</span><div id="layer-rail" class="layer-control" role="group" aria-label="${t('layerRangeLabel')}"><span class="layer-track" aria-hidden="true"></span><span id="upper-control" class="knob-control"><input id="upper" type="range" min="1" max="1" value="1" aria-label="${t('upperLayer')}" title="${t('upperKnob')}" disabled></span><span id="lower-control" class="knob-control"><input id="lower" type="range" min="1" max="1" value="1" aria-label="${t('lowerLayer')}" title="${t('lowerKnob')}" disabled></span></div></div>
+<label class="number"><span id="upper-number-caption">${t('upper')}</span><input id="upper-number" type="number" min="1" value="1" aria-label="${t('upperNumber')}" disabled></label><label id="lower-number-control" class="number">${t('lower')}<input id="lower-number" type="number" min="1" value="1" aria-label="${t('lowerNumber')}" disabled></label>
+<label><input id="single" type="checkbox">${t('single')}</label><label class="choice">${t('pathMode')}<select id="render-mode"><option value="bead">${t('filament')}</option><option value="line">${t('line')}</option></select></label><label class="choice">${t('color')}<select id="color"><option value="feature">${t('feature')}</option><option value="speed">${t('speed')}</option><option value="tool">${t('tool')}</option></select></label>
+<div id="time-summary" hidden><div>${t('modelTime')} <output id="model-time">—</output></div><div>${t('totalTime')} <output id="total-time">—</output></div></div>
+<div id="event-legend"></div><strong id="path-legend-heading" class="legend-heading" hidden>${t('pathHeading')}</strong><div id="legend"></div></aside></main>
+<footer><div class="path"><button id="play" disabled aria-label="${t('play')}">▶</button><label for="step">${t('pathOrder')}</label><input id="step" type="range" min="0" max="1" value="1" disabled><output id="step-label">—</output></div><div id="details">${t('readOnlyInitial')}</div></footer>
+<script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
+}
+module.exports = { getHtml };

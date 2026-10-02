@@ -1,0 +1,5 @@
+{
+  "extension.description": "3MFの3D形状とスライス済み経路を確認する、読み取り専用ビューアーです。",
+  "customEditor.displayName": "3MF G-code Preview",
+  "command.open.title": "3MF G-code Preview: 3MFを開く"
+}

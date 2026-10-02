@@ -1,0 +1,85 @@
+{
+  "name": "3mf-gcode-preview",
+  "displayName": "3MF G-code Preview",
+  "description": "%extension.description%",
+  "version": "0.2.0",
+  "publisher": "mm-lab",
+  "icon": "resources/icon.png",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mm-lab-dev/3mf-gcode-preview.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mm-lab-dev/3mf-gcode-preview/issues"
+  },
+  "homepage": "https://github.com/mm-lab-dev/3mf-gcode-preview#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "keywords": [
+    "3mf",
+    "3d",
+    "gcode",
+    "layers",
+    "bambu",
+    "toolpath"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCustomEditor:layerViewer.3mf"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "layerViewer.3mf",
+        "displayName": "%customEditor.displayName%",
+        "selector": [
+          {
+            "filenamePattern": "*.3mf"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "layerViewer.open",
+        "title": "%command.open.title%"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "vscode:prepublish": "npm run build",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.js",
+    "test:ui": "npm run build && node test/ui.js",
+    "test:extension": "npm run build && node test/extension-host.js",
+    "package": "vsce package --no-dependencies --allow-missing-repository",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.56.0",
+    "pngjs": "^7.0.0"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "three": "^0.180.0"
+  }
+}
