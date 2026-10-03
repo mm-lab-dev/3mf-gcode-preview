@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 — 2026-10-03
+
+- Rename the custom editor ID to `3mfGcodePreview.editor` and the open command ID to `3mfGcodePreview.open`.
+- If you assigned `*.3mf` to the previous `layerViewer.3mf` ID or bound the previous `layerViewer.open` command, update your VS Code settings or keybindings to use the new IDs.
+
 ## 0.2.0 — 2026-10-03
 
 Initial release.

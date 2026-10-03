@@ -2,7 +2,7 @@
   "name": "3mf-gcode-preview",
   "displayName": "3MF G-code Preview",
   "description": "%extension.description%",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "mm-lab",
   "icon": "resources/icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -39,12 +39,12 @@
   },
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onCustomEditor:layerViewer.3mf"
+    "onCustomEditor:3mfGcodePreview.editor"
   ],
   "contributes": {
     "customEditors": [
       {
-        "viewType": "layerViewer.3mf",
+        "viewType": "3mfGcodePreview.editor",
         "displayName": "%customEditor.displayName%",
         "selector": [
           {
@@ -56,7 +56,7 @@
     ],
     "commands": [
       {
-        "command": "layerViewer.open",
+        "command": "3mfGcodePreview.open",
         "title": "%command.open.title%"
       }
     ]

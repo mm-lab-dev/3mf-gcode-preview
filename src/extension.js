@@ -52,10 +52,10 @@ function activate(context) {
       panel.onDidDispose(() => { disposed = true; generation++; receiver.dispose(); if (worker) void worker.terminate(); });
     }
   };
-  context.subscriptions.push(vscode.window.registerCustomEditorProvider('layerViewer.3mf', provider, { supportsMultipleEditorsPerDocument: true }));
-  context.subscriptions.push(vscode.commands.registerCommand('layerViewer.open', async uri => {
+  context.subscriptions.push(vscode.window.registerCustomEditorProvider('3mfGcodePreview.editor', provider, { supportsMultipleEditorsPerDocument: true }));
+  context.subscriptions.push(vscode.commands.registerCommand('3mfGcodePreview.open', async uri => {
     if (!uri) { const selected = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { '3MF': ['3mf'] } }); uri = selected?.[0]; }
-    if (uri) await vscode.commands.executeCommand('vscode.openWith', uri, 'layerViewer.3mf');
+    if (uri) await vscode.commands.executeCommand('vscode.openWith', uri, '3mfGcodePreview.editor');
   }));
 }
 module.exports = { activate };
