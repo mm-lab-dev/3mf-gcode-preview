@@ -1,23 +1,50 @@
 # 3MF G-code Preview
 
-Preview sliced 3MF files in VS Code. Explore the model, inspect toolpaths layer by layer, and play through the order in which paths are printed. The viewer is read-only and never changes your 3MF file.
+Explore a sliced 3MF print in VS Code: see the whole toolpath, isolate layers, and follow the order in which paths are printed. The viewer is read-only and never changes your 3MF file.
 
-## Install and open
+<img src="resources/readme/overview.png" width="480" alt="A 20 mm cup shown as a colored 3D toolpath, with layer controls and print times beside it">
 
-In VS Code, open the Extensions view, search for `3MF G-code Preview`, and install it from the Marketplace. Then open a `.gcode.3mf` or `.3mf` file. If another editor opens it, choose Reopen Editor With… and select 3MF G-code Preview.
-
-You can also run `3MF G-code Preview: Open 3MF` from the Command Palette.
-
-For a toolpath preview, the 3MF must contain sliced G-code. In Bambu Studio, **Export plate sliced file** creates this kind of file. A 3MF project without G-code can show its model geometry, but this extension cannot slice it.
+*A sliced 20 mm cup with 200 layers. The preview shows the complete print, path types, layer range, and slicer time estimates in one view.*
 
 ## Explore a print
 
-- **Choose layers:** Drag the two handles on the vertical slider to show a range, enter layer numbers, or switch to a single layer.
-- **Follow the print order:** Step through or play the selected layers. Completed paths remain visible as playback builds the preview.
-- **Inspect paths:** Color and filter by path type, speed, or tool. Show or hide travel moves separately, and switch between filament-style paths and center lines.
-- **Find print actions:** Show markers for retraction, unretraction, wipes, and the start of outer-wall paths.
-- **See the file structure:** Open the plate, object, and part tree over the viewer. The tree is for inspection; it does not edit parts or control their visibility.
-- **Check time estimates:** View model and total print times when the slicer included them in the file.
+### Focus on the layers you need
+
+Drag the two handles or enter layer numbers to show a range. Switch to **Single layer** when you want to inspect one slice, and use **Top view** to see its path layout.
+
+<img src="resources/readme/layer-range.png" width="480" alt="The first 55 layers of the cup shown from above, with the upper layer set to 55">
+
+### See individual paths
+
+Switch between filament-style paths and center lines. Color paths by type, speed, or tool; use the legend to hide categories and show travel moves separately. The path-order slider and play button reveal how the selected layers are printed.
+
+Display choices are shared across files and restored when you reopen the preview. Layer selection and playback position stay with the current preview. The 3D grid uses 10 mm squares.
+
+<img src="resources/readme/single-layer.png" width="480" alt="Layer 55 shown as center lines colored by speed">
+
+Another model shows how the two path displays handle a dense, detailed region:
+
+<img src="resources/readme/toolpaths-filament.png" width="480" alt="Close-up of colored filament-style paths around a circular feature">
+
+*Filament view shows the approximate width of each deposited path.*
+
+<img src="resources/readme/toolpaths-lines.png" width="240" alt="The same close-up displayed as colored center lines">
+
+*The same area in Line view reveals the individual path routes.*
+
+### Check what is in the file
+
+Open **Structure** to browse plates, objects, and parts without changing them. The viewer also shows model and total print times when the slicer included estimates, plus optional markers for retraction, unretraction, wipes, and outer-wall path starts.
+
+<img src="resources/readme/structure.png" width="480" alt="The cup's plate, object, and part tree open over the 3D preview">
+
+## Install and open
+
+In VS Code, open the Extensions view, search for `3MF G-code Preview`, and install it from the Marketplace. Then open a `.gcode.3mf` or `.3mf` file. If another editor opens it, choose **Reopen Editor With…** and select **3MF G-code Preview**.
+
+You can also run **3MF G-code Preview: Open 3MF** from the Command Palette.
+
+For a toolpath preview, the 3MF must contain sliced G-code. In Bambu Studio, **Export plate sliced file** creates this kind of file. A 3MF project without G-code can show its model geometry, but this extension cannot slice it.
 
 The interface follows the VS Code display language: Japanese for Japanese locales and English otherwise. Names stored in the 3MF stay as written in the file.
 

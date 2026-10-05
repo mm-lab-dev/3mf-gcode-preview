@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 — 2026-10-05
+
+- Save display preferences across files and synchronize changes between open previews. Layer range and playback position remain specific to each preview.
+- Move the layer-range slider beside the settings panel and extend it to the height of the preview area.
+- Keep the 3D grid spacing fixed at 10 mm, regardless of model size.
+- Add screenshots showing layer selection, path rendering, and file structure to the README.
+
 ## 0.2.1 — 2026-10-03
 
 - Rename the custom editor ID to `3mfGcodePreview.editor` and the open command ID to `3mfGcodePreview.open`.

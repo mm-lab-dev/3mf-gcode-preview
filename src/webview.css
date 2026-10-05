@@ -19,3 +19,5 @@
 #path-legend-heading{flex:none}
 aside{gap:6px}
 header{position:relative;z-index:10}#structure-popover{position:absolute;top:calc(100% + 1px);left:14px;width:min(320px,calc(100vw - 28px));max-height:min(50vh,420px);overflow:auto;padding:12px;background:var(--vscode-editorWidget-background,#252d38);border:1px solid var(--border);border-radius:5px;box-shadow:0 8px 24px #0008}#structure-popover>strong{display:block;margin-bottom:8px}#structure-tree ul{list-style:none;margin:0;padding-left:18px;border-left:1px solid var(--border)}#structure-tree>ul{padding-left:0;border-left:0}#structure-tree li{margin:2px 0;min-width:0}#structure-tree summary,#structure-tree .structure-leaf{display:block;padding:3px 5px;border-radius:3px;overflow-wrap:anywhere}#structure-tree summary{display:list-item;cursor:pointer}#structure-tree summary:hover,#structure-tree summary:focus-visible{background:var(--vscode-list-hoverBackground,#34404e);outline-color:var(--accent)}
+main>#layer-slider{flex:0 0 72px;align-self:stretch;min-height:0;max-height:none;padding:8px 3px;border-left:1px solid var(--border)}
+#upper-caption{width:100%;text-align:center;font-size:11px;line-height:1.2}

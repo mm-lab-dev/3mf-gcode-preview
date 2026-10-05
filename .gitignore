@@ -4,3 +4,4 @@ dist/
 .vscode-test/
 test-results/
 spool_case_body.gcode.3mf
+sample/

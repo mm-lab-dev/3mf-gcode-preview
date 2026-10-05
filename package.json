@@ -2,7 +2,7 @@
   "name": "3mf-gcode-preview",
   "displayName": "3MF G-code Preview",
   "description": "%extension.description%",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "mm-lab",
   "icon": "resources/icon.png",
   "license": "SEE LICENSE IN LICENSE",

@@ -4,6 +4,7 @@ import { loadModel } from './model';
 import { parseStructure } from './structure';
 import { createBeadMesh, createBeadCaps, connected, writeBead, writeBeadCap, uploadBeads } from './bead';
 import { translator, localizeDiagnostic } from './i18n';
+import { normalizeDisplaySettings } from './display-settings';
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const locale=document.documentElement.lang==='ja'?'ja':'en', t=translator(locale), numberLocale=locale==='ja'?'ja-JP':'en-US';
@@ -19,6 +20,7 @@ const hiddenCategories={feature:new Set(),speed:new Set(),tool:new Set()};
 let data, pathObjects=[], eventObjects=[], model, animation, timer, renderer, controls, fitBox, selectedPlate=0, structurePlates=[];
 let travelVisible=false;
 let eventVisible={retract:true,unretract:true,wipe:true,outerStart:true};
+let displaySettings=normalizeDisplaySettings();
 let visibilityVersion=0;
 function requestRender() { if(renderer&&animation===undefined) animation=requestAnimationFrame(render); }
 function render() {
@@ -31,7 +33,14 @@ const scene = new THREE.Scene(); scene.background = new THREE.Color('#141920');
 const camera = new THREE.PerspectiveCamera(40,1,0.01,100000); camera.up.set(0,0,1);
 scene.add(new THREE.HemisphereLight(0xffffff,0x667788,1.2));
 const light=new THREE.DirectionalLight(0xffffff,2); light.position.set(100,-100,200); scene.add(light);
-const bed=new THREE.GridHelper(200,20,0x657487,0x303b48); bed.rotation.x=Math.PI/2; bed.position.z=-0.05; scene.add(bed);
+const gridStep=10;
+let gridSize=20;
+function createGrid(size) {
+  const grid=new THREE.GridHelper(size,size/gridStep,0x657487,0x303b48);
+  grid.rotation.x=Math.PI/2; grid.position.z=-0.05; scene.add(grid);
+  return grid;
+}
+let bed=createGrid(gridSize);
 const marker = new THREE.Mesh(new THREE.SphereGeometry(0.7,12,8), new THREE.MeshBasicMaterial({color:0xffffff})); marker.visible=false; scene.add(marker);
 const eventMatrix=new THREE.Matrix4();
 function stop() { if(timer) clearInterval(timer); timer=undefined; $('play').textContent='▶'; $('play').setAttribute('aria-label',t('play')); }
@@ -120,7 +129,7 @@ function recolor() {
     row.type='button'; row.dataset.category=key; row.dataset.label=name; row.setAttribute('aria-label',name);
     swatch.style.backgroundColor=color; swatch.setAttribute('aria-hidden','true'); indicator.className='legend-state'; indicator.setAttribute('aria-hidden','true');
     row.append(swatch,document.createTextNode(name),indicator);
-    row.addEventListener('click',()=>{ if(key==='travel') travelVisible=!travelVisible; else { const hidden=hiddenCategories[mode]; if(hidden.has(key)) hidden.delete(key); else hidden.add(key); } visibilityVersion++; update(); });
+    row.addEventListener('click',()=>{ if(key==='travel') travelVisible=!travelVisible; else { const hidden=hiddenCategories[mode]; if(hidden.has(key)) hidden.delete(key); else hidden.add(key); } visibilityVersion++; update(); saveDisplaySettings(); });
     $('legend').append(row);
   }
   $('event-legend').replaceChildren();
@@ -130,7 +139,7 @@ function recolor() {
     row.type='button'; row.dataset.event=key; row.dataset.label=name; row.setAttribute('aria-label',name);
     swatch.style.backgroundColor=color; swatch.setAttribute('aria-hidden','true'); indicator.className='legend-state'; indicator.setAttribute('aria-hidden','true');
     row.append(swatch,document.createTextNode(name),indicator);
-    row.addEventListener('click',()=>{ eventVisible[key]=!eventVisible[key]; update(); });
+    row.addEventListener('click',()=>{ eventVisible[key]=!eventVisible[key]; update(); saveDisplaySettings(); });
     $('event-legend').append(row);
   }
   updateLegend();
@@ -151,9 +160,34 @@ function fit(top=false) {
   const extent=Math.max(size.x,size.y,size.z,10), distance=extent/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)))*1.5/Math.min(camera.aspect,1);
   controls.target.copy(center); camera.position.copy(center).add(top ? new THREE.Vector3(0,-0.001,distance) : new THREE.Vector3(distance*0.65,-distance*0.85,distance*0.75));
   camera.near=Math.max(distance/10000,0.001); camera.far=distance*100; camera.updateProjectionMatrix(); controls.update();
-  bed.scale.setScalar(Math.max(extent/200,0.1)); bed.position.x=center.x; bed.position.y=center.y; requestRender();
+  const nextGridSize=Math.ceil(Math.max(size.x,size.y,20)/(gridStep*2))*gridStep*2;
+  if(nextGridSize!==gridSize) {
+    disposeObject(bed);
+    gridSize=nextGridSize;
+    bed=createGrid(gridSize);
+  }
+  bed.position.x=center.x; bed.position.y=center.y; requestRender();
 }
-function remember() { vscode.setState({ upper:Number($('upper').value), lower:Number($('lower').value), single:$('single').checked, travel:travelVisible, color:$('color').value, renderMode:$('render-mode').value, eventVisible, hiddenCategories:Object.fromEntries(Object.entries(hiddenCategories).map(([mode,hidden])=>[mode,[...hidden]])) }); }
+function rememberRange() { vscode.setState({ upper:Number($('upper').value), lower:Number($('lower').value), single:$('single').checked }); }
+function saveDisplaySettings() {
+  displaySettings=normalizeDisplaySettings({
+    color:$('color').value,
+    renderMode:$('render-mode').value,
+    travel:travelVisible,
+    eventVisible,
+    hiddenCategories:Object.fromEntries(Object.entries(hiddenCategories).map(([mode,hidden])=>[mode,[...hidden]]))
+  });
+  vscode.postMessage({type:'displaySettingsChanged',settings:displaySettings});
+}
+function applyDisplaySettings(value) {
+  displaySettings=normalizeDisplaySettings(value);
+  $('color').value=displaySettings.color;
+  $('render-mode').value=displaySettings.renderMode;
+  travelVisible=displaySettings.travel;
+  eventVisible={...displaySettings.eventVisible};
+  for(const mode of ['feature','speed','tool']) hiddenCategories[mode]=new Set(displaySettings.hiddenCategories[mode]);
+  if(data) { visibilityVersion++; recolor(); update(); }
+}
 function updateLayerControls(lower, upper) {
   const single=$('single').checked, count=data.layers.length;
   $('lower-control').hidden=$('lower-number-control').hidden=single;
@@ -238,7 +272,7 @@ function update(changed, resetStep=false) {
   if(step>0) marker.position.fromArray(data.positions,(end-1)*6+3);
   const index=step>0?end-1:low.start, current=layerForSegment(index);
   $('details').textContent=t('visibleSegments',formatNumber(visibleSegments),current.number,formatNumber(current.extrusion),formatNumber(current.travel),featureName(data.types[index]),(data.speeds[index]??0).toFixed(1),data.tools[index]??0,data.lines[index]??'—');
-  remember(); requestRender();
+  rememberRange(); requestRender();
 }
 function lowerBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(a[mid]<value) lo=mid+1; else hi=mid; } return lo; }
 function upperBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(a[mid]<=value) lo=mid+1; else hi=mid; } return lo; }
@@ -252,9 +286,10 @@ function showToolpath(message) {
   for(let i=0;i<data.segmentCount;i++) if(data.types[i]!==9) { fitBox.expandByPoint(new THREE.Vector3().fromArray(data.positions,i*6)); fitBox.expandByPoint(new THREE.Vector3().fromArray(data.positions,i*6+3)); }
   for(const id of ['upper','lower','upper-number','lower-number']) { $(id).max=String(data.layers.length); $(id).disabled=false; }
   $('upper').value=String(Math.min(saved?.upper??data.layers.length,data.layers.length)); $('lower').value=String(Math.min(saved?.lower??1,data.layers.length));
-  $('single').checked=saved?.single??false; travelVisible=saved?.travel??false; $('color').value=saved?.color??'feature'; $('render-mode').value=saved?.renderMode==='line'?'line':'bead';
-  eventVisible=Object.fromEntries(eventOptions.map(([key])=>[key,saved?.eventVisible?.[key]!==false]));
-  for(const mode of ['feature','speed','tool']) { const keys=saved?.hiddenCategories?.[mode]; hiddenCategories[mode]=new Set(Array.isArray(keys)?keys.filter(key=>typeof key==='string'):[]); }
+  $('single').checked=saved?.single??false;
+  $('color').value=displaySettings.color; $('render-mode').value=displaySettings.renderMode;
+  travelVisible=displaySettings.travel; eventVisible={...displaySettings.eventVisible};
+  for(const mode of ['feature','speed','tool']) hiddenCategories[mode]=new Set(displaySettings.hiddenCategories[mode]);
   ['step','play','single','color','render-mode'].forEach(id=>$(id).disabled=false); warning(data.warnings.filter(message=>!routineGcodeWarning(message))); createEventObjects(); recolor(); update('upper',true); fit();
   status(t('toolpathStatus',$('plate').selectedOptions[0]?.textContent??'',data.layers.length,formatNumber(data.segmentCount)));
 }
@@ -268,6 +303,7 @@ function showModel(bytes) {
 window.addEventListener('message',event=>{
   try {
     const message=event.data;
+    if(message.type==='displaySettings') applyDisplaySettings(message.settings);
     if(message.type==='loading') { clear(); resetStructure(); warning(); status(t('loading')); $('plate').disabled=true; }
     if(message.type==='archive') { $('plate').replaceChildren(); message.plates.forEach((name,index)=>{ const option=document.createElement('option'); option.value=String(index); option.textContent=name; $('plate').append(option); }); $('plate').disabled=message.plates.length<2; structurePlates=parseStructure(message.structure,message.plates,locale); selectedPlate=0; updateStructure(); status(t('loadingFile',message.filename)); }
     if(message.type==='toolpath') showToolpath(message);
@@ -293,8 +329,8 @@ $('layer-rail').addEventListener('pointermove',moveRail);
 for(const type of ['pointerup','pointercancel','lostpointercapture']) $('layer-rail').addEventListener(type,()=>{railDrag=undefined;});
 for(const side of ['upper','lower']) $(`${side}-number`).addEventListener('change',()=>{ if(!data) return; const value=Number($(`${side}-number`).value); $(side).value=String(Number.isFinite(value)?Math.max(1,Math.min(data.layers.length,Math.round(value))):1); stop(); update(side,true); });
 $('single').addEventListener('change',()=>{ stop(); update($('single').checked?'upper':'lower',true); });
-$('color').addEventListener('change',()=>{ recolor(); update(); });
-$('render-mode').addEventListener('change',()=>{ stop(); recolor(); update(); });
+$('color').addEventListener('change',()=>{ recolor(); update(); saveDisplaySettings(); });
+$('render-mode').addEventListener('change',()=>{ stop(); recolor(); update(); saveDisplaySettings(); });
 $('step').addEventListener('input',()=>{ stop(); update(); });
 $('fit').addEventListener('click',()=>fit()); $('top').addEventListener('click',()=>fit(true)); $('iso').addEventListener('click',()=>fit());
 $('reload').addEventListener('click',()=>vscode.postMessage({type:'reload'}));

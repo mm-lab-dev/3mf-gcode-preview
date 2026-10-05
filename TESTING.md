@@ -1,5 +1,15 @@
 # Verification record
 
+## 0.2.2 — 2026-10-05
+
+- Node.js tests: 31 passed, including shared display settings and extension-side synchronization.
+- Playwright UI: passed after the 10 mm grid and full-height layer slider changes.
+- VS Code Extension Host 1.140.0 / Windows: passed activation, command, Custom Editor, Webview handshake, virtual filesystem reads, and zero input writes.
+- VSIX: `3mf-gcode-preview-0.2.2.vsix` built successfully. Its file list includes six README screenshots and excludes local `.gcode.3mf` samples.
+- Real Remote-SSH use remains unverified.
+
+## 0.2.0 — 2026-10-03
+
 Target: **3MF G-code Preview 0.2.0**. Verified on 2026-10-03.
 
 | Check | Result | Coverage |

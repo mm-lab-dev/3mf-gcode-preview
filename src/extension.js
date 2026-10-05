@@ -4,7 +4,12 @@ const { randomBytes } = require('node:crypto');
 const { Worker } = require('node:worker_threads');
 const { getHtml } = require('./html');
 const { MAX_FILE } = require('./archive');
+const { normalizeDisplaySettings } = require('./display-settings');
+const DISPLAY_SETTINGS_KEY = 'displaySettings.v1';
 function activate(context) {
+  let displaySettings = normalizeDisplaySettings(context.globalState.get(DISPLAY_SETTINGS_KEY));
+  let settingsWrite = Promise.resolve();
+  const previews = new Set();
   const provider = {
     async openCustomDocument(uri) { return { uri, dispose() {} }; },
     async resolveCustomEditor(document, panel) {
@@ -13,6 +18,7 @@ function activate(context) {
       panel.webview.html = getHtml({ scriptUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(root, 'webview.js')), styleUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(root, 'webview.css')), cspSource: panel.webview.cspSource, nonce: randomBytes(18).toString('hex'), language:vscode.env.language });
       let worker, bytes, disposed = false, selectionId = 0, generation = 0;
       const post = message => { if (!disposed) panel.webview.postMessage(message); };
+      previews.add(post);
       async function load() {
         const current = ++generation; selectionId++;
         if (worker) { void worker.terminate(); worker = undefined; }
@@ -44,12 +50,21 @@ function activate(context) {
         } catch (error) { if (current === generation) post({ type: 'error', message: error.message }); }
       }
       const receiver = panel.webview.onDidReceiveMessage(message => {
-        if (message?.type === 'ready' || message?.type === 'reload') void load();
+        if (message?.type === 'ready') { post({ type: 'displaySettings', settings: displaySettings }); void load(); }
+        else if (message?.type === 'reload') void load();
+        else if (message?.type === 'displaySettingsChanged') {
+          const next = normalizeDisplaySettings(message.settings);
+          if (JSON.stringify(next) === JSON.stringify(displaySettings)) return;
+          displaySettings = next;
+          for (const preview of previews) if (preview !== post) preview({ type: 'displaySettings', settings: next });
+          settingsWrite = settingsWrite.then(() => context.globalState.update(DISPLAY_SETTINGS_KEY, next))
+            .catch(error => console.error('Could not save display settings:', error));
+        }
         else if (message?.type === 'plate' && Number.isInteger(message.index) && message.index >= 0 && worker) {
           worker.postMessage({ type: 'plate', index: message.index, id: ++selectionId });
         }
       });
-      panel.onDidDispose(() => { disposed = true; generation++; receiver.dispose(); if (worker) void worker.terminate(); });
+      panel.onDidDispose(() => { disposed = true; previews.delete(post); generation++; receiver.dispose(); if (worker) void worker.terminate(); });
     }
   };
   context.subscriptions.push(vscode.window.registerCustomEditorProvider('3mfGcodePreview.editor', provider, { supportsMultipleEditorsPerDocument: true }));

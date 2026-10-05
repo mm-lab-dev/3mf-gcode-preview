@@ -55,8 +55,9 @@ async function main() {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   let browser;
   try {
-    browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
-    const page=await browser.newPage({viewport:{width:1200,height:850}}), errors=[];
+    fs.mkdirSync('test-results',{recursive:true});
+    browser=await chromium.launchPersistentContext(path.resolve('test-results/ui-profile'),{headless:true,viewport:{width:1200,height:850},args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+    const page=await browser.newPage(), errors=[];
     page.on('pageerror',error=>errors.push(error.message));
     await page.addInitScript(()=>{
       let state; window.sent=[]; window.__webglDraws=0;
@@ -88,6 +89,9 @@ async function main() {
     const pathListBounds=await page.locator('#legend').boundingBox();
     assert.ok(eventHeadingBounds.y<pathHeadingBounds.y&&pathHeadingBounds.y<pathListBounds.y,'marker and path headings must separate their lists');
     const viewportWidth=(await page.locator('#viewport').boundingBox()).width;
+    const viewportBox=await page.locator('#viewport').boundingBox(), fullRailBox=await page.locator('.layer-track').boundingBox(), panelBox=await page.locator('#layers').boundingBox();
+    assert.ok(fullRailBox.x>viewportBox.x+viewportBox.width&&fullRailBox.x<panelBox.x,'full-height layer rail sits between the preview and settings panel');
+    assert.ok(fullRailBox.height>viewportBox.height-80,`layer rail should span the preview height: ${fullRailBox.height} vs ${viewportBox.height}`);
     const structureButton=page.getByRole('button',{name:'構成',exact:true});
     await structureButton.click();
     assert.equal(await structureButton.getAttribute('aria-expanded'),'true');
@@ -108,7 +112,7 @@ async function main() {
     await page.screenshot({path:'test-results/layers.png'});
     const beadImage=await page.locator('canvas').screenshot(), beadOrange=orangePixels(beadImage);
     await page.locator('#top').click(); await page.screenshot({path:'test-results/bead-top.png'}); await page.locator('#iso').click();
-    await page.locator('#render-mode').selectOption('line'); assert.equal(await page.evaluate(()=>window.acquireVsCodeApi().getState().renderMode),'line');
+    await page.locator('#render-mode').selectOption('line'); assert.equal(await page.evaluate(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1)?.settings.renderMode),'line');
     const lineImage=await page.locator('canvas').screenshot(), lineOrange=orangePixels(lineImage);
     assert.ok(beadOrange>lineOrange*1.5,`opaque bead preview must draw a visibly thicker path: ${beadOrange} vs ${lineOrange} orange pixels`);
     await page.screenshot({path:'test-results/line-mode.png'});
@@ -188,7 +192,7 @@ async function main() {
     const travelButton=page.getByRole('button',{name:'移動',exact:true});
     assert.equal(await page.locator('#travel').count(),0,'Travel has one control in the legend');
     const travelBounds=await travelButton.boundingBox(), legendBounds=await page.locator('#legend').boundingBox(); assert.ok(travelBounds.y>=legendBounds.y&&travelBounds.y+travelBounds.height<=legendBounds.y+legendBounds.height,`Travel toggle stays visible at the top of the legend: ${JSON.stringify({travelBounds,legendBounds})}`);
-    await travelButton.click(); assert.equal(await travelButton.getAttribute('aria-pressed'),'true'); assert.equal(await page.evaluate(()=>window.acquireVsCodeApi().getState().travel),true);
+    await travelButton.click(); assert.equal(await travelButton.getAttribute('aria-pressed'),'true'); assert.equal(await page.evaluate(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1)?.settings.travel),true);
     await page.locator('#color').selectOption('speed'); assert.match(await page.locator('#legend').innerText(),/300/); assertSameRail(await page.locator('.layer-track').boundingBox()); assert.equal(await travelButton.getAttribute('aria-pressed'),'true');
     await page.locator('#color').selectOption('tool'); assert.match(await page.locator('#legend').innerText(),/ツール 0/); assertSameRail(await page.locator('.layer-track').boundingBox());
     await page.locator('#top').click(); await page.locator('#iso').click(); await page.locator('#fit').click();
@@ -198,7 +202,7 @@ async function main() {
     await page.locator('#color').selectOption('feature'); assert.equal(await visibleCount(),7);
     const outer=legendButton('外壁'); await outer.click(); assert.equal(await outer.getAttribute('aria-pressed'),'false'); assert.equal(await visibleCount(),3);
     await legendButton('インフィル').click(); assert.equal(await visibleCount(),2);
-    await legendButton('移動').click(); assert.equal(await travelButton.getAttribute('aria-pressed'),'false'); assert.equal(await page.evaluate(()=>window.acquireVsCodeApi().getState().travel),false); assert.equal(await visibleCount(),0);
+    await legendButton('移動').click(); assert.equal(await travelButton.getAttribute('aria-pressed'),'false'); assert.equal(await page.evaluate(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1)?.settings.travel),false); assert.equal(await visibleCount(),0);
     await outer.focus(); await page.keyboard.press('Enter'); assert.equal(await outer.getAttribute('aria-pressed'),'true'); assert.equal(await visibleCount(),4);
     await legendButton('インフィル').click(); assert.equal(await visibleCount(),5);
     await page.locator('#color').selectOption('speed');
@@ -335,27 +339,37 @@ async function main() {
     }
     await send({type:'toolpath',index:0,data:packed(sliced)}); await page.setViewportSize({width:500,height:650}); await page.screenshot({path:'test-results/narrow.png'});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
-    const savedState=await page.evaluate(()=>window.acquireVsCodeApi().getState());
-    const english=await browser.newPage({viewport:{width:1200,height:850}}), englishErrors=[];
+    const savedRange=await page.evaluate(()=>window.acquireVsCodeApi().getState());
+    const savedSettings=await page.evaluate(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1)?.settings);
+    assert.deepEqual(Object.keys(savedRange).sort(),['lower','single','upper'],'only the open tab retains layer selection');
+    assert.ok(savedSettings&&!('upper' in savedSettings)&&!('lower' in savedSettings)&&!('single' in savedSettings),'global settings exclude layer selection');
+    const english=await browser.newPage(), englishErrors=[];
     english.on('pageerror',error=>englishErrors.push(error.message));
-    await english.addInitScript(initial=>{
-      let state=initial; window.sent=[];
+    await english.addInitScript(()=>{
+      let state; window.sent=[];
       window.acquireVsCodeApi=()=>({postMessage:message=>window.sent.push(message),getState:()=>state,setState:value=>{state=value;}});
-    },savedState);
+    });
     await english.goto(`http://127.0.0.1:${server.address().port}/en`);
     assert.equal(await english.locator('html').getAttribute('lang'),'en');
     assert.equal(await english.getByRole('button',{name:'Structure'}).count(),1);
     assert.equal(await english.locator('#path-legend-heading').innerText(),'Toolpaths');
+    await english.evaluate(message=>window.dispatchEvent(new MessageEvent('message',{data:message})),{type:'displaySettings',settings:savedSettings});
     await english.evaluate(message=>window.dispatchEvent(new MessageEvent('message',{data:message})),{type:'archive',plates:['Metadata/plate_1.gcode'],structure:{settings:modelSettings},filename:'sample.gcode.3mf'});
     await english.evaluate(message=>window.dispatchEvent(new MessageEvent('message',{data:message})),{type:'toolpath',index:0,data:packed(sliced)});
     assert.match(await english.locator('#status').innerText(),/3 layers · 17 toolpath segments/);
     assert.equal(await english.getByRole('button',{name:'Outer wall',exact:true}).count(),1);
     assert.equal(await english.locator('#event-legend .legend-heading').innerText(),'Action markers');
-    assert.equal(await english.locator('#upper').inputValue(),String(savedState.upper));
-    assert.equal(await english.locator('#lower').inputValue(),String(savedState.lower));
-    assert.equal(await english.locator('#color').inputValue(),savedState.color);
-    assert.equal(await english.locator('#render-mode').inputValue(),savedState.renderMode);
-    assert.equal(await english.getByRole('button',{name:'Travel',exact:true}).getAttribute('aria-pressed'),String(savedState.travel));
+    assert.equal(await english.locator('#upper').inputValue(),'3','a new file starts with its full layer range');
+    assert.equal(await english.locator('#lower').inputValue(),'1');
+    assert.equal(await english.locator('#single').isChecked(),false);
+    assert.equal(await english.locator('#color').inputValue(),savedSettings.color);
+    assert.equal(await english.locator('#render-mode').inputValue(),savedSettings.renderMode);
+    assert.equal(await english.getByRole('button',{name:'Travel',exact:true}).getAttribute('aria-pressed'),String(savedSettings.travel));
+    const nextColor=savedSettings.color==='speed'?'feature':'speed';
+    await english.locator('#color').selectOption(nextColor);
+    const changedSettings=await english.evaluate(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1)?.settings);
+    await send({type:'displaySettings',settings:changedSettings});
+    assert.equal(await page.locator('#color').inputValue(),nextColor,'another open preview receives shared display settings');
     await english.getByRole('button',{name:'Structure'}).click();
     assert.match(await english.locator('#structure-tree').innerText(),/Plate 1[\s\S]*spool_case_body/);
     await english.setViewportSize({width:500,height:650});

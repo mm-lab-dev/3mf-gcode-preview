@@ -10,6 +10,8 @@ test-results/**
 package-lock.json
 *.vsix
 *.gcode.3mf
+**/*.gcode.3mf
+sample/**
 PUBLISHING.md
 TESTING.md
 resources/large-icon.png
