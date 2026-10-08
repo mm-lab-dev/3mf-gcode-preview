@@ -11,9 +11,10 @@ function bambuStructure(root,t) {
   if(!root) return [];
   const objects=new Map(children(root,'object').map(object=>{
     const id=object.getAttribute('id');
-    return [id,{name:metadata(object,'name')||t('objectLabel',id),parts:children(object,'part').map(part=>({name:metadata(part,'name')||t('partLabel',part.getAttribute('id'))}))}];
+    return [id,{id,name:metadata(object,'name')||t('objectLabel',id),parts:children(object,'part').map(part=>({id:part.getAttribute('id'),name:metadata(part,'name')||t('partLabel',part.getAttribute('id'))}))}];
   }));
   return children(root,'plate').map((plate,index)=>({
+    id:metadata(plate,'plater_id')||String(index+1),
     name:metadata(plate,'plater_name')||t('plateLabel',metadata(plate,'plater_id')||index+1),
     filename:metadata(plate,'gcode_file'),
     objects:children(plate,'model_instance').map(instance=>objects.get(metadata(instance,'object_id'))).filter(Boolean)
@@ -25,9 +26,9 @@ function modelStructure(root,t) {
   const objects=new Map(children(resources,'object').map(node=>[node.getAttribute('id'),node]));
   return children(build,'item').filter(item=>item.getAttribute('printable')!=='0').map(item=>{
     const id=item.getAttribute('objectid'), object=objects.get(id), components=object&&first(object,'components');
-    return {name:object?.getAttribute('name')||t('objectLabel',id),parts:components?children(components,'component').map(component=>{
+    return {id,name:object?.getAttribute('name')||t('objectLabel',id),parts:components?children(components,'component').map(component=>{
       const childId=component.getAttribute('objectid');
-      return {name:objects.get(childId)?.getAttribute('name')||t('partLabel',childId)};
+      return {id:childId,name:objects.get(childId)?.getAttribute('name')||t('partLabel',childId)};
     }):[]};
   });
 }
@@ -35,10 +36,10 @@ export function parseStructure(source,plateNames=[],language='ja') {
   const t=translator(language), configured=bambuStructure(documentRoot(source?.settings),t);
   if(configured.length) {
     if(!plateNames.length) return configured;
-    return plateNames.map((name,index)=>configured.find(plate=>plate.filename?.toLowerCase()===name.toLowerCase())||configured[index]||{name:t('plateLabel',index+1),objects:[]});
+    return plateNames.map((name,index)=>configured.find(plate=>plate.filename?.toLowerCase()===name.toLowerCase())||configured[index]||{id:String(index+1),name:t('plateLabel',index+1),objects:[]});
   }
   const objects=modelStructure(documentRoot(source?.model),t);
-  if(!objects.length) return [];
-  if(!plateNames.length) return [{name:t('plateLabel',1),objects}];
-  return plateNames.map((_,index)=>({name:t('plateLabel',index+1),objects:plateNames.length===1?objects:[]}));
+  if(!objects.length && !plateNames.length) return [];
+  if(!plateNames.length) return [{id:'1',name:t('plateLabel',1),objects}];
+  return plateNames.map((_,index)=>({id:String(index+1),name:t('plateLabel',index+1),objects:plateNames.length===1?objects:[]}));
 }

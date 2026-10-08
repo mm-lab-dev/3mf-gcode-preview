@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — 2026-10-08
+
+- Add a project-rooted structure tree with a parameter table for the selected project, plate, object, or part.
+- Show settings and metadata from Bambu-style project, model, and slice configuration files and the main 3MF model, grouped by source.
+- Filter the selected item's parameters by keyword and retain the search term when selecting another tree item. Keep shared object settings available from each plate while associating instance settings with their plate.
+- Provide Japanese and English labels for the new view and update the README screenshot.
+
 ## 0.2.2 — 2026-10-05
 
 - Save display preferences across files and synchronize changes between open previews. Layer range and playback position remain specific to each preview.

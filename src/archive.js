@@ -9,12 +9,17 @@ function inspectArchive(bytes) {
     if (++entries > 10000) throw new Error('Too many entries in this 3MF.');
     total += entry.originalSize;
     if (entry.originalSize > MAX_FILE || total > MAX_TOTAL) throw new Error('3MF expanded size exceeds the safety limit (128 MiB per entry / 256 MiB total).');
-    return /\.gcode$/i.test(entry.name) || /^(?:Metadata\/model_settings\.config|3D\/3dmodel\.model)$/i.test(entry.name);
+    return /\.gcode$/i.test(entry.name) || /^(?:Metadata\/(?:model_settings|project_settings|slice_info)\.config|3D\/3dmodel\.model)$/i.test(entry.name);
   } });
   const names=Object.keys(files);
   const plates = names.filter(name=>/\.gcode$/i.test(name)).sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(name => ({ name, gcode: strFromU8(files[name]) }));
   const source=pattern=>{ const name=names.find(value=>pattern.test(value)); return name?strFromU8(files[name]):null; };
-  const structure={settings:source(/^Metadata\/model_settings\.config$/i),model:source(/^3D\/3dmodel\.model$/i)};
+  const structure={
+    settings:source(/^Metadata\/model_settings\.config$/i),
+    projectSettings:source(/^Metadata\/project_settings\.config$/i),
+    sliceInfo:source(/^Metadata\/slice_info\.config$/i),
+    model:source(/^3D\/3dmodel\.model$/i)
+  };
   return { plates, structure };
 }
 module.exports = { inspectArchive, MAX_FILE };

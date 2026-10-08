@@ -34,9 +34,11 @@ Another model shows how the two path displays handle a dense, detailed region:
 
 ### Check what is in the file
 
-Open **Structure** to browse plates, objects, and parts without changing them. The viewer also shows model and total print times when the slicer included estimates, plus optional markers for retraction, unretraction, wipes, and outer-wall path starts.
+Open **Structure** to browse the project, plates, objects, and parts without changing them. Select a tree item to see its settings and metadata in a key and value table, grouped by source. The search field filters the selected item's parameters by source, key, or value. Bambu-style project settings, model settings, and slice information are shown when present, along with metadata from the main 3MF model. The viewer also shows model and total print times when the slicer included estimates, plus optional markers for retraction, unretraction, wipes, and outer-wall path starts.
 
-<img src="resources/readme/structure.png" width="480" alt="The cup's plate, object, and part tree open over the 3D preview">
+<img src="resources/readme/structure.png" width="480" alt="Project tree and project-level settings from the sliced cup 3MF">
+
+<img src="resources/readme/parameter-filter.png" width="480" alt="A part's parameter table filtered by keyword">
 
 ## Install and open
 

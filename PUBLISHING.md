@@ -1,8 +1,10 @@
-# 0.2.2 release checklist
+# 0.3.0 release checklist
 
 Source repository: https://github.com/mm-lab-dev/3mf-gcode-preview
 
 `npm run package` builds a VSIX for local review. Its `vscode:prepublish` hook builds the extension before packaging; it does not publish to the Marketplace.
+
+Prepared on 2026-10-08: `3mf-gcode-preview-0.3.0.vsix` was built and inspected. See [the verification record](TESTING.md) for test results and its SHA-256 hash. Marketplace publication is pending.
 
 ## Before publishing
 

@@ -1,5 +1,15 @@
 # Verification record
 
+## 0.3.0 — 2026-10-08
+
+- Node.js tests: 32 passed, including archive extraction of project and slice settings.
+- Playwright UI: passed for the project-rooted tree, selected-node parameter tables, keyword filtering retained across tree selections and cleared for a new 3MF, shared objects on multiple plates, plate-specific instance values, empty states, Japanese and English labels, and narrow layout. The README filter screenshot was generated from this test. Existing toolpath and model preview checks also passed.
+- README images: overview, layer range, single layer, and structure panel were recaptured with `node scripts/capture-readme.js` from the local Bambu-style sample. The two path close-ups without UI were retained unchanged.
+- VS Code Extension Host 1.140.0 / Windows: passed activation, command, Custom Editor, Webview handshake, virtual filesystem reads, and zero input writes.
+- Local Bambu-style sample parsed read-only: one plate, 200 layers, 102,574 segments, 578 project-setting keys, plus model settings and slice information.
+- VSIX: `3mf-gcode-preview-0.3.0.vsix` built successfully. The 22-file archive contains version 0.3.0, bundled code and styles, seven README images matching the repository files, notices, and no `.gcode.3mf` samples. SHA-256: `89495F1E221B312E1CA23CE3CE7081EF93B7BE90407BDB5A4F331124A50C25DC`.
+- Real Remote-SSH use remains unverified. Marketplace publication has not been performed.
+
 ## 0.2.2 — 2026-10-05
 
 - Node.js tests: 31 passed, including shared display settings and extension-side synchronization.

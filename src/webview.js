@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadModel } from './model';
 import { parseStructure } from './structure';
+import { parseParameters } from './parameters';
 import { createBeadMesh, createBeadCaps, connected, writeBead, writeBeadCap, uploadBeads } from './bead';
 import { translator, localizeDiagnostic } from './i18n';
 import { normalizeDisplaySettings } from './display-settings';
@@ -17,7 +18,7 @@ const paletteColors=palette.map(value=>new THREE.Color(value)), toolColors=toolP
 const speedBands=[0,50,100,150,200,300];
 const eventOptions=[['retract',0,t('retract'),'#e43dc5'],['unretract',1,t('unretract'),'#39c7e9'],['wipe',2,t('wipe'),'#e7d93a'],['outerStart',3,t('outerStart'),'#e9edf2']];
 const hiddenCategories={feature:new Set(),speed:new Set(),tool:new Set()};
-let data, pathObjects=[], eventObjects=[], model, animation, timer, renderer, controls, fitBox, selectedPlate=0, structurePlates=[];
+let data, pathObjects=[], eventObjects=[], model, animation, timer, renderer, controls, fitBox, selectedPlate=0, structurePlates=[], parameters=[], structureNodes=new Map(), selectedNode;
 let travelVisible=false;
 let eventVisible={retract:true,unretract:true,wipe:true,outerStart:true};
 let displaySettings=normalizeDisplaySettings();
@@ -54,27 +55,79 @@ function routineGcodeWarning(message) {
 }
 function status(text) { $('status').textContent=text; }
 function closeStructure() { $('structure-popover').hidden=true; $('structure-toggle').setAttribute('aria-expanded','false'); }
-function structureNode(name,children=[]) {
-  const item=document.createElement('li');
-  if(children.length) {
-    const details=document.createElement('details'), summary=document.createElement('summary'), list=document.createElement('ul');
-    details.open=true; summary.textContent=name;
-    for(const child of children) list.append(structureNode(child.name,child.children));
-    details.append(summary,list); item.append(details);
-  } else {
-    const label=document.createElement('span'); label.className='structure-leaf'; label.textContent=name; item.append(label);
+const parameterSource={projectSettings:'projectSettingsSource',settings:'settingsSource',sliceInfo:'sliceInfoSource',model:'modelSource'};
+function matchesNode(row,node) {
+  const target=row.target;
+  if(target.kind!==node.kind) return false;
+  if(node.kind==='project') return true;
+  if(node.kind==='plate') return String(target.plateId)===String(node.plateId);
+  if(String(target.objectId)!==String(node.objectId)) return false;
+  if(node.kind==='part') return String(target.partId)===String(node.partId);
+  return !target.plateId||String(target.plateId)===String(node.plateId);
+}
+function updateParameters() {
+  const query=$('parameters-filter').value.trim().toLocaleLowerCase();
+  const available=parameters.filter(row=>selectedNode&&matchesNode(row,selectedNode));
+  const matches=available.filter(row=>!query||[row.source,row.key,row.value].some(value=>value.toLocaleLowerCase().includes(query)));
+  const body=$('parameters-rows'), fragment=document.createDocumentFragment();
+  let previousFile;
+  for(const row of matches) {
+    if(row.file!==previousFile) {
+      const heading=document.createElement('tr'), cell=document.createElement('td');
+      heading.className='parameter-source'; cell.colSpan=2; cell.textContent=row.source; heading.append(cell); fragment.append(heading); previousFile=row.file;
+    }
+    const tr=document.createElement('tr');
+    for(const value of [row.key,row.value]) {
+      const cell=document.createElement('td'); cell.textContent=value; tr.append(cell);
+    }
+    fragment.append(tr);
   }
+  body.replaceChildren(fragment);
+  $('parameters-count').textContent=t('parametersCount',formatNumber(available.length),formatNumber(matches.length));
+  $('parameters-empty').hidden=matches.length>0;
+  $('parameters-empty').textContent=available.length?t('parametersNoMatch'):t('parametersEmpty');
+}
+function selectStructureNode(node,focus=false) {
+  selectedNode=node; $('selected-structure').textContent=node.name;
+  for(const button of document.querySelectorAll('.structure-select')) button.setAttribute('aria-current',String(button.dataset.key===node.key));
+  updateParameters();
+  if(focus) document.querySelector(`.structure-select[data-key="${node.key}"]`)?.focus();
+}
+function structureNode(node) {
+  structureNodes.set(node.key,node);
+  const item=document.createElement('li'), row=document.createElement('div'), select=document.createElement('button');
+  row.className='structure-row'; select.className='structure-select'; select.dataset.key=node.key; select.textContent=node.name;
+  select.addEventListener('click',()=>selectStructureNode(node));
+  if(node.children.length) {
+    const expand=document.createElement('button'), list=document.createElement('ul');
+    expand.className='structure-expand'; expand.textContent='▾'; expand.setAttribute('aria-label',`${node.name}: ${t('hide')}`); expand.setAttribute('aria-expanded','true');
+    for(const child of node.children) list.append(structureNode(child));
+    expand.addEventListener('click',()=>{ const open=list.hidden; list.hidden=!open; expand.textContent=open?'▾':'▸'; expand.setAttribute('aria-expanded',String(open)); expand.setAttribute('aria-label',`${node.name}: ${t(open?'hide':'show')}`); });
+    row.append(expand,select); item.append(row,list);
+  } else { const spacer=document.createElement('span'); spacer.className='structure-expand'; row.append(spacer,select); item.append(row); }
   return item;
 }
-function updateStructure() {
-  const plate=structurePlates[selectedPlate]??structurePlates[0], tree=$('structure-tree'); tree.replaceChildren();
-  const available=Boolean(plate?.objects?.length); $('structure-toggle').disabled=!available;
-  if(!available) { closeStructure(); return; }
-  const list=document.createElement('ul');
-  list.append(structureNode(plate.name,plate.objects.map(object=>({name:object.name,children:object.parts.map(part=>({name:part.name}))}))));
-  tree.append(list);
+function loadStructure(source,plateNames) {
+  $('parameters-filter').value='';
+  structurePlates=parseStructure(source,plateNames,locale);
+  parameters=parseParameters(source,t).map(row=>({ ...row, source:t(parameterSource[row.file]) }));
+  const root={key:'project',kind:'project',name:t('projectLabel'),children:structurePlates.map((plate,index)=>({
+    key:`plate:${index}`,kind:'plate',plateId:plate.id,name:plate.name,children:plate.objects.map((object,objectIndex)=>({
+      key:`object:${index}:${objectIndex}`,kind:'object',plateId:plate.id,objectId:object.id,name:object.name,children:object.parts.map((part,partIndex)=>({
+        key:`part:${index}:${objectIndex}:${partIndex}`,kind:'part',plateId:plate.id,objectId:object.id,partId:part.id,name:part.name,children:[]
+      }))
+    }))
+  }))};
+  structureNodes=new Map(); const list=document.createElement('ul'); list.append(structureNode(root)); $('structure-tree').replaceChildren(list);
+  $('structure-toggle').disabled=false; selectStructureNode(root);
 }
-function resetStructure() { structurePlates=[]; $('structure-tree').replaceChildren(); $('structure-toggle').disabled=true; closeStructure(); }
+function updateStructure() {
+  const plate=structureNodes.get(`plate:${selectedPlate}`);
+  if(plate) selectStructureNode(plate);
+}
+function resetStructure() {
+  structurePlates=[]; parameters=[]; structureNodes.clear(); selectedNode=undefined; $('structure-tree').replaceChildren(); $('parameters-rows').replaceChildren(); $('parameters-filter').value=''; $('structure-toggle').disabled=true; closeStructure();
+}
 function decode(value, Constructor=Uint8Array) { const raw=atob(value); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); return new Constructor(bytes.buffer); }
 function colorFor(index) {
   if(data.types[index]===9) return paletteColors[9];
@@ -279,7 +332,6 @@ function upperBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(l
 function layerForSegment(index) { let lo=0,hi=data.layers.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(data.layers[mid].end<=index) lo=mid+1; else hi=mid; } return data.layers[Math.min(lo,data.layers.length-1)]; }
 function showToolpath(message) {
   const saved=vscode.getState(); clear(); data=message.data; selectedPlate=message.index; $('plate').value=String(selectedPlate);
-  updateStructure();
   for(const [key,Type] of Object.entries({positions:Float32Array,types:Uint8Array,speeds:Float32Array,tools:Uint16Array,lines:Uint32Array,widths:Float32Array,heights:Float32Array,eventPositions:Float32Array,eventKinds:Uint8Array,eventIndices:Uint32Array,eventLayers:Uint32Array})) data[key]=decode(data[key],Type);
   $('time-summary').hidden=false; $('model-time').textContent=data.modelTime||'—'; $('total-time').textContent=data.totalTime||'—';
   fitBox=new THREE.Box3();
@@ -305,7 +357,7 @@ window.addEventListener('message',event=>{
     const message=event.data;
     if(message.type==='displaySettings') applyDisplaySettings(message.settings);
     if(message.type==='loading') { clear(); resetStructure(); warning(); status(t('loading')); $('plate').disabled=true; }
-    if(message.type==='archive') { $('plate').replaceChildren(); message.plates.forEach((name,index)=>{ const option=document.createElement('option'); option.value=String(index); option.textContent=name; $('plate').append(option); }); $('plate').disabled=message.plates.length<2; structurePlates=parseStructure(message.structure,message.plates,locale); selectedPlate=0; updateStructure(); status(t('loadingFile',message.filename)); }
+    if(message.type==='archive') { $('plate').replaceChildren(); message.plates.forEach((name,index)=>{ const option=document.createElement('option'); option.value=String(index); option.textContent=name; $('plate').append(option); }); $('plate').disabled=message.plates.length<2; selectedPlate=0; loadStructure(message.structure,message.plates); status(t('loadingFile',message.filename)); }
     if(message.type==='toolpath') showToolpath(message);
     if(message.type==='model') showModel(message.bytes);
     if(message.type==='error') { clear(); status(t('readError')); warning([message.message]); }
@@ -334,9 +386,16 @@ $('render-mode').addEventListener('change',()=>{ stop(); recolor(); update(); sa
 $('step').addEventListener('input',()=>{ stop(); update(); });
 $('fit').addEventListener('click',()=>fit()); $('top').addEventListener('click',()=>fit(true)); $('iso').addEventListener('click',()=>fit());
 $('reload').addEventListener('click',()=>vscode.postMessage({type:'reload'}));
-$('structure-toggle').addEventListener('click',()=>{ const opening=$('structure-popover').hidden; $('structure-popover').hidden=!opening; $('structure-toggle').setAttribute('aria-expanded',String(opening)); if(opening) $('structure-tree').querySelector('summary')?.focus(); });
-document.addEventListener('pointerdown',event=>{ if(!$('structure-popover').hidden&&!$('structure-popover').contains(event.target)&&event.target!==$('structure-toggle')) closeStructure(); });
-document.addEventListener('keydown',event=>{ if(event.key==='Escape'&&!$('structure-popover').hidden) { closeStructure(); $('structure-toggle').focus(); } });
+$('structure-toggle').addEventListener('click',()=>{ const opening=$('structure-popover').hidden; $('structure-popover').hidden=!opening; $('structure-toggle').setAttribute('aria-expanded',String(opening)); if(opening) document.querySelector('.structure-select[aria-current=true]')?.focus(); });
+$('structure-close').addEventListener('click',()=>{ closeStructure(); $('structure-toggle').focus(); });
+$('parameters-filter').addEventListener('input',updateParameters);
+document.addEventListener('pointerdown',event=>{
+  if(!$('structure-popover').hidden&&!$('structure-popover').contains(event.target)&&event.target!==$('structure-toggle')) closeStructure();
+});
+document.addEventListener('keydown',event=>{
+  if(event.key!=='Escape') return;
+  if(!$('structure-popover').hidden) { closeStructure(); $('structure-toggle').focus(); }
+});
 $('plate').addEventListener('change',()=>{ selectedPlate=Number($('plate').value); clear(); updateStructure(); warning(); status(t('plateParsing')); vscode.postMessage({type:'plate',index:selectedPlate}); });
 $('play').addEventListener('click',()=>{
   if(!data) return;
