@@ -25,7 +25,7 @@ function activate(context) {
         try {
           post({ type: 'loading' });
           const stat = await vscode.workspace.fs.stat(document.uri);
-          if (stat.size > MAX_FILE) throw new Error('3MF exceeds the 128 MiB input limit.');
+          if (stat.size > MAX_FILE) throw new Error('File exceeds the 128 MiB input limit.');
           const read = await vscode.workspace.fs.readFile(document.uri);
           if (disposed || current !== generation) return;
           bytes = read;
@@ -39,14 +39,14 @@ function activate(context) {
               else post({ type: 'model', bytes: Buffer.from(bytes).toString('base64') });
             } else if (message.type === 'toolpath' && message.id === selectionId) {
               // VS Code messages are JSON: explicitly encode packed arrays.
-              for (const key of ['positions','types','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers']) {
+              for (const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers']) {
                 const value = message.data[key]; message.data[key] = Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('base64');
               }
               post(message);
             } else if (message.type === 'error' && (message.id === undefined || message.id === selectionId)) post(message);
           });
           worker.on('error', error => { if (current === generation) post({ type: 'error', message: error.message }); });
-          worker.postMessage({ type: 'init', bytes: read });
+          worker.postMessage({ type: 'init', bytes: read, filename: path.basename(document.uri.path) });
         } catch (error) { if (current === generation) post({ type: 'error', message: error.message }); }
       }
       const receiver = panel.webview.onDidReceiveMessage(message => {
@@ -69,7 +69,7 @@ function activate(context) {
   };
   context.subscriptions.push(vscode.window.registerCustomEditorProvider('3mfGcodePreview.editor', provider, { supportsMultipleEditorsPerDocument: true }));
   context.subscriptions.push(vscode.commands.registerCommand('3mfGcodePreview.open', async uri => {
-    if (!uri) { const selected = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { '3MF': ['3mf'] } }); uri = selected?.[0]; }
+    if (!uri) { const selected = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { '3MF / G-code': ['3mf', 'gcode'] } }); uri = selected?.[0]; }
     if (uri) await vscode.commands.executeCommand('vscode.openWith', uri, '3mfGcodePreview.editor');
   }));
 }

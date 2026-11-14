@@ -2,7 +2,7 @@
   "name": "3mf-gcode-preview",
   "displayName": "3MF G-code Preview",
   "description": "%extension.description%",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "mm-lab",
   "icon": "resources/icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -49,6 +49,9 @@
         "selector": [
           {
             "filenamePattern": "*.3mf"
+          },
+          {
+            "filenamePattern": "*.gcode"
           }
         ],
         "priority": "default"
@@ -73,7 +76,7 @@
   },
   "devDependencies": {
     "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "4.0.0",
+    "@vscode/vsce": "4.1.1",
     "esbuild": "^0.25.0",
     "playwright": "^1.56.0",
     "pngjs": "^7.0.0"

@@ -1,16 +1,28 @@
 // A display interpreter, never a slicer or printer controller. Coordinates are mm.
-const FEATURES = ['Other', 'Outer wall', 'Inner wall', 'Infill', 'Solid infill', 'Top surface', 'Support', 'Skirt / brim', 'Bridge', 'Travel'];
+// Keep existing IDs stable: 9 is Travel throughout rendering and saved filters.
+const FEATURES = ['Other', 'Outer wall', 'Inner wall', 'Infill', 'Solid infill', 'Top surface', 'Support', 'Skirt / brim', 'Bridge', 'Travel', 'Overhang wall', 'Support interface', 'Floating vertical shell', 'Ironing', 'Prime tower', 'Gap infill'];
+const FEATURE_ALIASES = [
+  ['other','custom'],
+  ['outer wall','external perimeter','wall-outer'],
+  ['inner wall','perimeter','wall-inner'],
+  ['infill','sparse infill','internal infill','fill'],
+  ['solid infill','internal solid infill','bottom surface','skin'],
+  ['top surface','top solid infill'],
+  ['support','support material'],
+  ['skirt','brim','skirt/brim','skirt / brim'],
+  ['bridge','internal bridge','bridge infill'],
+  [],
+  ['overhang wall','overhang perimeter'],
+  ['support interface','support material interface','support-interface'],
+  ['floating vertical shell'],
+  ['ironing'],
+  ['prime tower'],
+  ['gap infill'],
+];
+const featureLookup = new Map(FEATURE_ALIASES.flatMap((names,id)=>names.map(name=>[name,id])));
 const EVENT = { Retract: 0, Unretract: 1, Wipe: 2, OuterWallStart: 3 };
 function featureId(name) {
-  if (/outer|external perimeter|wall-outer/i.test(name)) return 1;
-  if (/inner|perimeter|wall-inner/i.test(name)) return 2;
-  if (/top/i.test(name)) return 5;
-  if (/bridge/i.test(name)) return 8;
-  if (/solid|bottom|skin/i.test(name)) return 4;
-  if (/infill|fill/i.test(name)) return 3;
-  if (/support/i.test(name)) return 6;
-  if (/skirt|brim/i.test(name)) return 7;
-  return 0;
+  return featureLookup.get(name.trim().replace(/\s+/g,' ').toLowerCase()) ?? 0;
 }
 function arcPoints(start, end, params, clockwise) {
   let cx, cy;
@@ -36,6 +48,8 @@ function arcPoints(start, end, params, clockwise) {
 function parseGcode(text, { maxSegments = 2000000 } = {}) {
   const warnings = new Set(), layers = [], positions = [], types = [], speeds = [], tools = [], lines = [], widths = [], heights = [];
   const eventPositions=[], eventKinds=[], eventIndices=[], eventLayers=[];
+  const sourceTypes=[], sourceFeatures=[{name:'',type:0,extrusionSegments:0,travelSegments:0}], sourceLookup=new Map([['',0]]);
+  let sourceFeature=0;
   let pos=[0,0,0], offset=[0,0,0], e=0, debt=0, absolute=true, eAbsolute=true, unit=1, speed=0, tool=0, feature=0, layer=null, tagged=false, pending=false, height=null, plane=17, arcAbsolute=false, beadWidth=0.45, beadHeight=null, nominalHeight=0.2;
   let wiping=false, modelTime=null, totalTime=null;
   const extruders=new Map();
@@ -58,6 +72,8 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
       if(!joined) recordEvent(EVENT.OuterWallStart,a,types.length+1);
     }
     positions.push(...a,...b); types.push(extruding?feature:9); speeds.push(speed/60); tools.push(tool); lines.push(lineNo); widths.push(extruding?beadWidth:0); heights.push(extruding?(beadHeight??nominalHeight):0);
+    sourceTypes.push(sourceFeature);
+    sourceFeatures[sourceFeature][extruding?'extrusionSegments':'travelSegments']++;
     layer.end=types.length; layer[extruding?'extrusion':'travel']++;
   }
   let lineNo=0;
@@ -80,7 +96,16 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
       tagged=true; pending=true; height=null;
     }
     const hm=comment.match(/^(?:Z_HEIGHT|Z)\s*:\s*(-?[\d.]+)/i); if (hm) height=Number(hm[1]);
-    const fm=comment.match(/^(?:FEATURE|TYPE)\s*:\s*(.*)/i); if (fm) feature=featureId(fm[1]);
+    const fm=comment.match(/^(?:FEATURE|TYPE)\s*:\s*(.*)/i);
+    if (fm) {
+      const name=fm[1].trim(); feature=featureId(name);
+      if(!sourceLookup.has(name)) {
+        if(sourceFeatures.length>=10000) throw new Error('Too many distinct G-code feature names.');
+        sourceLookup.set(name,sourceFeatures.length);
+        sourceFeatures.push({name,type:feature,extrusionSegments:0,travelSegments:0});
+      }
+      sourceFeature=sourceLookup.get(name);
+    }
     const wm=comment.match(/^(?:WIDTH|LINE_WIDTH)\s*:\s*([\d.]+)/i); if(wm) { const value=Number(wm[1]); if(Number.isFinite(value)&&value>=0.02&&value<=3) beadWidth=value; }
     const bhm=comment.match(/^HEIGHT\s*:\s*([\d.]+)/i); if(bhm) { const value=Number(bhm[1]); if(Number.isFinite(value)&&value>=0.02&&value<=1.2) beadHeight=value; }
     const code=(semicolon>=0?raw.slice(0,semicolon):raw).replace(/\([^)]*\)/g,'').replace(/^\s*N\d+\s*/i,'').trim().toUpperCase();
@@ -125,6 +150,6 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
   }
   if (!hasTags) warnings.add('No slicer layer markers: layers inferred from extrusion height; spiral and nonplanar paths may be grouped inaccurately.');
   if (!types.length || !layers.some(l=>l.extrusion)) throw new Error('No printable extrusion paths found in this plate.');
-  return { layers, positions:Float32Array.from(positions), types:Uint8Array.from(types), speeds:Float32Array.from(speeds), tools:Uint16Array.from(tools), lines:Uint32Array.from(lines), widths:Float32Array.from(widths), heights:Float32Array.from(heights), eventPositions:Float32Array.from(eventPositions), eventKinds:Uint8Array.from(eventKinds), eventIndices:Uint32Array.from(eventIndices), eventLayers:Uint32Array.from(eventLayers), eventCount:eventKinds.length, modelTime, totalTime, features:FEATURES, warnings:[...warnings], segmentCount:types.length };
+  return { layers, positions:Float32Array.from(positions), types:Uint8Array.from(types), sourceTypes:Uint32Array.from(sourceTypes), sourceFeatures, speeds:Float32Array.from(speeds), tools:Uint16Array.from(tools), lines:Uint32Array.from(lines), widths:Float32Array.from(widths), heights:Float32Array.from(heights), eventPositions:Float32Array.from(eventPositions), eventKinds:Uint8Array.from(eventKinds), eventIndices:Uint32Array.from(eventIndices), eventLayers:Uint32Array.from(eventLayers), eventCount:eventKinds.length, modelTime, totalTime, features:FEATURES, warnings:[...warnings], segmentCount:types.length };
 }
-module.exports = { parseGcode, arcPoints, FEATURES, EVENT };
+module.exports = { parseGcode, arcPoints, FEATURES, FEATURE_ALIASES, EVENT };

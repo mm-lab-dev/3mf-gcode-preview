@@ -1,5 +1,5 @@
 {
-  "extension.description": "Read-only 3MF viewer with interactive 3D layer and toolpath review.",
+  "extension.description": "Read-only 3MF and G-code viewer with interactive 3D layer and toolpath review.",
   "customEditor.displayName": "3MF G-code Preview",
-  "command.open.title": "3MF G-code Preview: Open 3MF"
+  "command.open.title": "3MF G-code Preview: Open 3MF or G-code"
 }

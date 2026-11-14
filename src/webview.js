@@ -9,10 +9,10 @@ import { normalizeDisplaySettings } from './display-settings';
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const locale=document.documentElement.lang==='ja'?'ja':'en', t=translator(locale), numberLocale=locale==='ja'?'ja-JP':'en-US';
-const featureKeys=['other','outerWall','innerWall','infill','solidInfill','topSurface','support','skirtBrim','bridge','travel'];
+const featureKeys=['other','outerWall','innerWall','infill','solidInfill','topSurface','support','skirtBrim','bridge','travel','overhangWall','supportInterface','floatingShell','ironing','primeTower','gapInfill'];
 const featureName=index=>t(featureKeys[index]||'other');
 const formatNumber=value=>value.toLocaleString(numberLocale);
-const palette = ['#bdc5d2','#ff9e57','#ffe16a','#bb82f4','#579eef','#ef638f','#51d3ae','#b4d45a','#f07550','#75849c'];
+const palette = ['#8b929e','#ff9e57','#ffe16a','#bb82f4','#579eef','#ef638f','#51d3ae','#b4d45a','#f07550','#75849c','#d76bce','#39c7e9','#c7ad87','#9ebcff','#e0e0e0','#d85c69'];
 const toolPalette = ['#51d3ae','#ff9e57','#579eef','#ef638f','#ffe16a','#bb82f4'];
 const paletteColors=palette.map(value=>new THREE.Color(value)), toolColors=toolPalette.map(value=>new THREE.Color(value)), speedColor=new THREE.Color();
 const speedBands=[0,50,100,150,200,300];
@@ -147,6 +147,7 @@ function updateLegend() {
     const visible=button.dataset.event ? eventVisible[button.dataset.event] : categoryVisible(button.dataset.category);
     button.setAttribute('aria-pressed',String(visible));
     button.title=`${t(visible?'hide':'show')}: ${button.dataset.label}`;
+    if(button.dataset.sources) button.title+=`\n${t('sourceFeature')}:\n${button.dataset.sources}`;
     button.querySelector('.legend-state').textContent=visible?'✓':'−';
   }
 }
@@ -175,19 +176,26 @@ function recolor() {
   $('legend').replaceChildren();
   $('path-legend-heading').hidden=false;
   const mode=$('color').value;
-  const items=mode==='feature' ? data.features.slice(0,9).map((_,i)=>[String(i),featureName(i),palette[i]]) : mode==='tool' ? [...new Set(data.tools)].sort((a,b)=>a-b).map(tool=>[String(tool),t('toolLabel',tool),toolPalette[tool%toolPalette.length]]) : speedBands.map((min,i)=>[String(i),`${i+1<speedBands.length?`${min}–<${speedBands[i+1]}`:'300+'} mm/s`,new THREE.Color().setHSL((1-Math.min((min+(speedBands[i+1]??min))/2/300,1))*0.65,0.85,0.6).getStyle()]);
-  items.unshift(['travel',t('travel'),palette[9]]);
+  // Groups contain all parsed paths, regardless of layer range or visibility.
+  // Hiding a category must keep its button available so it can be restored.
+  const items=mode==='feature' ? data.features.flatMap((_,i)=>i!==9&&groups.has(String(i))?[[String(i),featureName(i),palette[i]]]:[]) : mode==='tool' ? [...new Set(data.tools)].sort((a,b)=>a-b).map(tool=>[String(tool),t('toolLabel',tool),toolPalette[tool%toolPalette.length]]) : speedBands.map((min,i)=>[String(i),`${i+1<speedBands.length?`${min}–<${speedBands[i+1]}`:'300+'} mm/s`,new THREE.Color().setHSL((1-Math.min((min+(speedBands[i+1]??min))/2/300,1))*0.65,0.85,0.6).getStyle()]).filter(([key])=>groups.has(key));
+  if(mode==='tool'||groups.has('travel')) items.unshift(['travel',t('travel'),palette[9]]);
   for(const [key,name,color] of items) {
     const row=document.createElement('button'), swatch=document.createElement('i'), indicator=document.createElement('span');
     row.type='button'; row.dataset.category=key; row.dataset.label=name; row.setAttribute('aria-label',name);
+    if(mode==='feature'&&key!=='travel') row.dataset.sources=(data.sourceFeatures||[]).filter(source=>String(source.type)===key&&source.extrusionSegments>0).map(source=>`${source.name||t('noFeatureTag')} (${formatNumber(source.extrusionSegments)})`).join('\n');
     swatch.style.backgroundColor=color; swatch.setAttribute('aria-hidden','true'); indicator.className='legend-state'; indicator.setAttribute('aria-hidden','true');
     row.append(swatch,document.createTextNode(name),indicator);
     row.addEventListener('click',()=>{ if(key==='travel') travelVisible=!travelVisible; else { const hidden=hiddenCategories[mode]; if(hidden.has(key)) hidden.delete(key); else hidden.add(key); } visibilityVersion++; update(); saveDisplaySettings(); });
     $('legend').append(row);
   }
   $('event-legend').replaceChildren();
-  const heading=document.createElement('strong'); heading.className='legend-heading'; heading.textContent=t('markerHeading'); $('event-legend').append(heading);
-  for(const [key,,name,color] of eventOptions) {
+  const presentEvents=new Set(data.eventKinds);
+  if(presentEvents.size) {
+    const heading=document.createElement('strong'); heading.className='legend-heading'; heading.textContent=t('markerHeading'); $('event-legend').append(heading);
+  }
+  for(const [key,kind,name,color] of eventOptions) {
+    if(!presentEvents.has(kind)) continue;
     const row=document.createElement('button'), swatch=document.createElement('i'), indicator=document.createElement('span');
     row.type='button'; row.dataset.event=key; row.dataset.label=name; row.setAttribute('aria-label',name);
     swatch.style.backgroundColor=color; swatch.setAttribute('aria-hidden','true'); indicator.className='legend-state'; indicator.setAttribute('aria-hidden','true');
@@ -325,6 +333,8 @@ function update(changed, resetStep=false) {
   if(step>0) marker.position.fromArray(data.positions,(end-1)*6+3);
   const index=step>0?end-1:low.start, current=layerForSegment(index);
   $('details').textContent=t('visibleSegments',formatNumber(visibleSegments),current.number,formatNumber(current.extrusion),formatNumber(current.travel),featureName(data.types[index]),(data.speeds[index]??0).toFixed(1),data.tools[index]??0,data.lines[index]??'—');
+  const source=data.sourceFeatures?.[data.sourceTypes?.[index]];
+  if(source&&data.types[index]!==9) $('details').textContent+=` | ${t('sourceFeature')}: ${source.name||t('noFeatureTag')}`;
   rememberRange(); requestRender();
 }
 function lowerBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(a[mid]<value) lo=mid+1; else hi=mid; } return lo; }
@@ -332,7 +342,7 @@ function upperBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(l
 function layerForSegment(index) { let lo=0,hi=data.layers.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(data.layers[mid].end<=index) lo=mid+1; else hi=mid; } return data.layers[Math.min(lo,data.layers.length-1)]; }
 function showToolpath(message) {
   const saved=vscode.getState(); clear(); data=message.data; selectedPlate=message.index; $('plate').value=String(selectedPlate);
-  for(const [key,Type] of Object.entries({positions:Float32Array,types:Uint8Array,speeds:Float32Array,tools:Uint16Array,lines:Uint32Array,widths:Float32Array,heights:Float32Array,eventPositions:Float32Array,eventKinds:Uint8Array,eventIndices:Uint32Array,eventLayers:Uint32Array})) data[key]=decode(data[key],Type);
+  for(const [key,Type] of Object.entries({positions:Float32Array,types:Uint8Array,sourceTypes:Uint32Array,speeds:Float32Array,tools:Uint16Array,lines:Uint32Array,widths:Float32Array,heights:Float32Array,eventPositions:Float32Array,eventKinds:Uint8Array,eventIndices:Uint32Array,eventLayers:Uint32Array})) data[key]=decode(data[key],Type);
   $('time-summary').hidden=false; $('model-time').textContent=data.modelTime||'—'; $('total-time').textContent=data.totalTime||'—';
   fitBox=new THREE.Box3();
   for(let i=0;i<data.segmentCount;i++) if(data.types[i]!==9) { fitBox.expandByPoint(new THREE.Vector3().fromArray(data.positions,i*6)); fitBox.expandByPoint(new THREE.Vector3().fromArray(data.positions,i*6+3)); }

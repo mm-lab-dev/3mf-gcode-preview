@@ -8,9 +8,9 @@ const { inspectArchive } = require('../src/archive');
 const { parseGcode } = require('../src/gcode');
 
 const root = path.resolve(__dirname, '..');
-const sample = path.join(root, 'sample', 'sample.gcode.3mf');
+const sample = path.join(root, 'sample', 'sample_bambu_studio.gcode.3mf');
 const output = path.join(root, 'test-results');
-const packedKeys = ['positions','types','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers'];
+const packedKeys = ['positions','types','sourceTypes','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers'];
 
 async function main() {
   if (!fs.existsSync(sample)) throw new Error(`Missing local screenshot sample: ${sample}`);

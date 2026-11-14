@@ -1,6 +1,6 @@
 # 3MF G-code Preview
 
-Explore a sliced 3MF print in VS Code: see the whole toolpath, isolate layers, and follow the order in which paths are printed. The viewer is read-only and never changes your 3MF file.
+Preview 3MF models and sliced G-code in VS Code. Explore the full toolpath, inspect individual layers, and follow the print sequence. The viewer is read-only and never changes the original file.
 
 <img src="resources/readme/overview.png" width="480" alt="A 20 mm cup shown as a colored 3D toolpath, with layer controls and print times beside it">
 
@@ -16,7 +16,7 @@ Drag the two handles or enter layer numbers to show a range. Switch to **Single 
 
 ### See individual paths
 
-Switch between filament-style paths and center lines. Color paths by type, speed, or tool; use the legend to hide categories and show travel moves separately. The path-order slider and play button reveal how the selected layers are printed.
+Switch between filament-style paths and center lines. Color paths by type, speed, or tool; use the legend to hide categories and show travel moves separately. Only path types, speed bands, and action markers present in the selected plate appear in their lists. The path-order slider and play button reveal how the selected layers are printed.
 
 Display choices are shared across files and restored when you reopen the preview. Layer selection and playback position stay with the current preview. The 3D grid uses 10 mm squares.
 
@@ -34,7 +34,9 @@ Another model shows how the two path displays handle a dense, detailed region:
 
 ### Check what is in the file
 
-Open **Structure** to browse the project, plates, objects, and parts without changing them. Select a tree item to see its settings and metadata in a key and value table, grouped by source. The search field filters the selected item's parameters by source, key, or value. Bambu-style project settings, model settings, and slice information are shown when present, along with metadata from the main 3MF model. The viewer also shows model and total print times when the slicer included estimates, plus optional markers for retraction, unretraction, wipes, and outer-wall path starts.
+For 3MF files, open **Structure** to browse the project, plates, objects, and parts. Select an item to view its available settings, and use the search field to find a parameter or value. The information shown depends on what the file contains.
+
+The viewer also shows print-time estimates when available, plus optional markers for retraction, unretraction, wipes, and outer-wall path starts.
 
 <img src="resources/readme/structure.png" width="480" alt="Project tree and project-level settings from the sliced cup 3MF">
 
@@ -42,11 +44,13 @@ Open **Structure** to browse the project, plates, objects, and parts without cha
 
 ## Install and open
 
-In VS Code, open the Extensions view, search for `3MF G-code Preview`, and install it from the Marketplace. Then open a `.gcode.3mf` or `.3mf` file. If another editor opens it, choose **Reopen Editor With…** and select **3MF G-code Preview**.
+In VS Code, open the Extensions view, search for `3MF G-code Preview`, and install it from the Marketplace. Then open a `.gcode`, `.gcode.3mf` or `.3mf` file. If another editor opens it, choose **Reopen Editor With…** and select **3MF G-code Preview**.
 
-You can also run **3MF G-code Preview: Open 3MF** from the Command Palette.
+You can also run **3MF G-code Preview: Open 3MF or G-code** from the Command Palette.
 
 For a toolpath preview, the 3MF must contain sliced G-code. In Bambu Studio, **Export plate sliced file** creates this kind of file. A 3MF project without G-code can show its model geometry, but this extension cannot slice it.
+
+You can also open text `.gcode` files exported by OrcaSlicer, PrusaSlicer, and UltiMaker Cura. Available path types depend on the slicer; unrecognized types appear as **Other**. Tool colors distinguish tools and do not reproduce the actual filament colors. Binary `.bgcode` and UltiMaker `.ufp` packages are not supported.
 
 The interface follows the VS Code display language: Japanese for Japanese locales and English otherwise. Names stored in the 3MF stay as written in the file.
 
@@ -54,7 +58,7 @@ The interface follows the VS Code display language: Japanese for Japanese locale
 
 The viewer draws a preview from the file's model and G-code. Filament-style paths approximate deposited material; they are not a measurement of the finished print. Print times come from the slicer's estimates. Action markers are derived from G-code and may differ from printer behavior. The viewer does not determine seam positions or simulate firmware-specific commands.
 
-Large or unsupported files may show an error. Warnings that affect the preview remain visible; routine notices about printer-specific commands are hidden. The extension does not send a job to a printer or start a print.
+Large or unsupported files may show an error. The extension does not send a job to a printer or start a print.
 
 ## Support
 

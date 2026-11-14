@@ -2,6 +2,36 @@ const { test }=require('node:test');
 const assert=require('node:assert/strict');
 const { parseGcode,arcPoints,EVENT }=require('../src/gcode');
 const { sliced }=require('./fixtures');
+
+test('ironing, prime tower, and gap infill retain distinct categories and raw labels',()=>{
+  const labels=['Ironing','Prime tower','Gap infill','IRONING','  gap   infill  ','future ironing mode'];
+  const text='M83\n'+labels.map((name,i)=>`;FEATURE:${name}\nG1 X${i+1} Z.2 E1`).join('\n');
+  const d=parseGcode(text);
+  assert.deepEqual([...d.types],[13,14,15,13,15,0]);
+  assert.deepEqual([...d.sourceTypes].map(i=>d.sourceFeatures[i].name),labels.map(s=>s.trim()));
+  assert.deepEqual([...new Set(d.types)].map(i=>d.features[i]),['Ironing','Prime tower','Gap infill','Other']);
+  assert.equal(d.sourceFeatures.reduce((sum,s)=>sum+s.extrusionSegments,0),6);
+});
+
+test('slicer aliases separate overhang walls, support interfaces, and floating shells',()=>{
+  const cases=[['Overhang wall',10],['Overhang perimeter',10],['Support',6],['Support material',6],['SUPPORT',6],['Support interface',11],['Support material interface',11],['SUPPORT-INTERFACE',11],['Floating vertical shell',12],['SKIN',4],['Top solid infill',5],['Internal Bridge',8],['Bridge infill',8],['External perimeter',1],['WALL-INNER',2],['Skirt/Brim',7],['Custom',0],['future support wall',0],['top-secret',0]];
+  const text='M83\n'+cases.map(([name],i)=>`;TYPE:${name}\nG1 X${i+1} Z.2 E1`).join('\n');
+  const d=parseGcode(text);
+  assert.deepEqual([...d.types],cases.map(([,type])=>type));
+  assert.deepEqual([...d.sourceTypes].map(i=>d.sourceFeatures[i].name),cases.map(([name])=>name));
+  assert.equal(d.sourceFeatures.reduce((sum,s)=>sum+s.extrusionSegments,0),cases.length);
+});
+
+test('source metadata distinguishes comment-only tags, extrusion, travel, and missing tags',()=>{
+  const d=parseGcode('M83\n;TYPE:Custom\n;LAYER:0\n;TYPE:SUPPORT-INTERFACE\nG1 X1 Z.2 E1\nG0 X2\n;TYPE: support   interface \nG1 X3 E1\n;TYPE:Unknown <wall>\nG1 X4 E1');
+  assert.deepEqual([...d.types],[11,9,11,0]);
+  assert.deepEqual(d.sourceFeatures.find(s=>s.name==='Custom'),{name:'Custom',type:0,extrusionSegments:0,travelSegments:0});
+  assert.deepEqual(d.sourceFeatures.find(s=>s.name==='SUPPORT-INTERFACE'),{name:'SUPPORT-INTERFACE',type:11,extrusionSegments:1,travelSegments:1});
+  assert.equal(d.sourceFeatures[d.sourceTypes[2]].name,'support   interface');
+  const plain=parseGcode('M83\nG1 X1 Z.2 E1');
+  assert.equal(plain.sourceFeatures[plain.sourceTypes[0]].name,'');
+  assert.equal(plain.sourceFeatures[0].extrusionSegments,1);
+});
 test('Bambu layer markers, features, speeds and travel are preserved',()=>{
   const d=parseGcode(sliced); assert.equal(d.layers.length,3); assert.deepEqual(d.layers.map(l=>l.z),[.2,.4,.6]); assert.equal(d.layers[0].extrusion,5); assert.ok(d.types.includes(3)); assert.ok(d.types.includes(5)); assert.ok(d.types.includes(9)); assert.equal(d.speeds[1],20); assert.equal(d.positions.length,d.segmentCount*6); assert.equal(d.widths.length,d.segmentCount); assert.equal(d.heights.length,d.segmentCount); assert.equal(d.layers[2].end,d.segmentCount);
 });

@@ -2,6 +2,11 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {normalizeDisplaySettings}=require('../src/display-settings');
 
+test('new feature filters persist without accepting Travel as a feature filter',()=>{
+  const s=normalizeDisplaySettings({hiddenCategories:{feature:['1','9','10','11','12','13','14','15','16']}});
+  assert.deepEqual(s.hiddenCategories.feature,['1','10','11','12','13','14','15']);
+});
+
 test('shared display settings omit file-specific layer selection',()=>{
   const settings=normalizeDisplaySettings({
     upper:55,lower:3,single:true,

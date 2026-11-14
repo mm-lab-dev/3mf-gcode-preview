@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-11-15
+
+- Open standalone text G-code files alongside sliced 3MF files.
+- Expand cross-slicer feature colors to distinguish overhang walls, support interfaces, floating vertical shells, ironing, prime towers, and gap infill.
+- Show original slicer feature names in legend tooltips and path details; keep unknown names under Other.
+- List only feature types, extrusion-speed bands, and action markers present in the selected plate. Keep visibility controls available across layer selection and playback, and preserve preferences across files.
+- Provide Japanese and English labels for the added categories and use distinct gray shades for prime towers and Other paths.
+- Update the extension description and README for G-code support.
+
 ## 0.3.0 — 2026-10-08
 
 - Add a project-rooted structure tree with a parameter table for the selected project, plate, object, or part.

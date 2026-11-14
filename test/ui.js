@@ -41,7 +41,7 @@ function orangeComponents(buffer) {
   return sizes.sort((a,b)=>b-a);
 }
 function trackIsGreen(buffer,fractionFromTop) { const png=PNG.sync.read(buffer), offset=(Math.floor(png.height*fractionFromTop)*png.width+Math.floor(png.width/2))*4; return png.data[offset+1]>png.data[offset]*1.3&&png.data[offset+1]>png.data[offset+2]*1.1; }
-function packed(text) { const data=parseGcode(text); for(const key of ['positions','types','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers']) data[key]=Buffer.from(data[key].buffer).toString('base64'); return data; }
+function packed(text) { const data=parseGcode(text); for(const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers']) data[key]=Buffer.from(data[key].buffer).toString('base64'); return data; }
 async function main() {
   const server=http.createServer((req,res)=>{
     if(req.url==='/'||req.url==='/en') { res.setHeader('Content-Type','text/html'); res.end(getHtml({scriptUri:'/webview.js',styleUri:'/webview.css',cspSource:"'self'",nonce:'test-nonce',language:req.url==='/en'?'en-US':'ja-JP'})); }
@@ -223,7 +223,7 @@ async function main() {
     assert.equal(await page.locator('#travel').count(),0,'Travel has one control in the legend');
     const travelBounds=await travelButton.boundingBox(), legendBounds=await page.locator('#legend').boundingBox(); assert.ok(travelBounds.y>=legendBounds.y&&travelBounds.y+travelBounds.height<=legendBounds.y+legendBounds.height,`Travel toggle stays visible at the top of the legend: ${JSON.stringify({travelBounds,legendBounds})}`);
     await travelButton.click(); assert.equal(await travelButton.getAttribute('aria-pressed'),'true'); assert.equal(await page.evaluate(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1)?.settings.travel),true);
-    await page.locator('#color').selectOption('speed'); assert.match(await page.locator('#legend').innerText(),/300/); assertSameRail(await page.locator('.layer-track').boundingBox()); assert.equal(await travelButton.getAttribute('aria-pressed'),'true');
+    await page.locator('#color').selectOption('speed'); assert.match(await page.locator('#legend').innerText(),/100–<150/); assertSameRail(await page.locator('.layer-track').boundingBox()); assert.equal(await travelButton.getAttribute('aria-pressed'),'true');
     await page.locator('#color').selectOption('tool'); assert.match(await page.locator('#legend').innerText(),/ツール 0/); assertSameRail(await page.locator('.layer-track').boundingBox());
     await page.locator('#top').click(); await page.locator('#iso').click(); await page.locator('#fit').click();
     await page.locator('#play').click(); await page.waitForTimeout(400); assert.equal(await page.locator('#step').inputValue(),await page.locator('#step').getAttribute('max'));
@@ -415,6 +415,136 @@ async function main() {
     await english.screenshot({path:'test-results/narrow-en.png'});
     await english.evaluate(message=>window.dispatchEvent(new MessageEvent('message',{data:message})),{type:'toolpath',index:0,data:packed(`${routineGcode}\nG2 X8 Y0 E0.2`)});
     assert.match(await english.locator('#warning').innerText(),/Invalid arc omitted/,'English diagnostics remain readable');
+    const speedKeys=()=>page.locator('#legend button').evaluateAll(rows=>rows.map(row=>row.dataset.category));
+    const sparseSpeeds='M83\n;LAYER:0\nG1 X10 Z.2 E1 F3000\n;LAYER:1\nG0 X0 Y2 Z.4 F12000\nG1 X10 E1 F18000';
+    await send({type:'displaySettings',settings:{color:'speed',renderMode:'line',travel:false}});
+    await send({type:'toolpath',index:0,data:packed(sparseSpeeds)});
+    assert.deepEqual(await speedKeys(),['travel','1','5'],'only extrusion speed bands appear; travel speed is separate');
+    await page.locator('#upper').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input'));});
+    assert.deepEqual(await speedKeys(),['travel','1','5'],'speed legend remains stable across layer selection');
+    await legendButton('300+ mm/s').click();
+    await page.locator('#color').selectOption('feature');
+    await page.locator('#color').selectOption('speed');
+    assert.equal(await legendButton('300+ mm/s').getAttribute('aria-pressed'),'false');
+    await send({type:'toolpath',index:0,data:packed('M83\nG1 X10 Z.2 E1 F6000')});
+    assert.deepEqual(await speedKeys(),['2'],'absent travel and speed bands disappear for a new plate');
+    await send({type:'toolpath',index:0,data:packed(sparseSpeeds)});
+    assert.equal(await legendButton('300+ mm/s').getAttribute('aria-pressed'),'false','speed preferences survive a plate without that band');
+    const boundaries='M83\n'+[0,50,100,150,200,300].map((speed,i)=>`G1 X${i+1} Z.2 E1 F${speed*60}`).join('\n');
+    await send({type:'toolpath',index:0,data:packed(boundaries)});
+    assert.deepEqual(await speedKeys(),['0','1','2','3','4','5'],'speed-band lower boundaries map to their own band');
+    const eventKeys=()=>page.locator('#event-legend button').evaluateAll(rows=>rows.map(row=>row.dataset.event));
+    const partialEvents='M83\n;LAYER:0\n;TYPE:Infill\nG1 X10 Z.2 E1\n;LAYER:1\nG1 X20 Z.4 E1\nG10\nG11';
+    const noEvents='M83\n;TYPE:Infill\nG1 X10 Z.2 E1';
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'line'}});
+    await send({type:'toolpath',index:0,data:packed(partialEvents)});
+    assert.deepEqual(await eventKeys(),['retract','unretract']);
+    await page.locator('#upper').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input'));});
+    assert.deepEqual(await eventKeys(),['retract','unretract'],'marker list covers the whole plate, including other layers');
+    await page.getByRole('button',{name:'リトラクト',exact:true}).click();
+    await page.locator('#color').selectOption('speed');
+    assert.deepEqual(await eventKeys(),['retract','unretract']);
+    assert.equal(await page.getByRole('button',{name:'リトラクト',exact:true}).getAttribute('aria-pressed'),'false');
+    await send({type:'toolpath',index:0,data:packed(noEvents)});
+    assert.deepEqual(await eventKeys(),[]);
+    assert.equal(await page.locator('#event-legend .legend-heading').count(),0,'no heading when the plate has no markers');
+    await send({type:'toolpath',index:0,data:packed(partialEvents)});
+    assert.equal(await page.getByRole('button',{name:'リトラクト',exact:true}).getAttribute('aria-pressed'),'false','marker preferences survive plates without that kind');
+    const sparseFeatures='M83\n;LAYER:0\n;TYPE:Outer wall\nG1 X10 Z.2 E1\n;LAYER:1\n;TYPE:Custom\nG0 X0 Y2 Z.4\n;TYPE:Ironing\nG1 X10 E.01';
+    const legendKeys=()=>page.locator('#legend button').evaluateAll(rows=>rows.map(row=>row.dataset.category));
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'line',travel:false}});
+    await send({type:'toolpath',index:0,data:packed(sparseFeatures)});
+    assert.deepEqual(await legendKeys(),['travel','1','13'],'only categories with actual paths appear; comment-only Custom is absent');
+    await page.locator('#upper').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input'));});
+    assert.deepEqual(await legendKeys(),['travel','1','13'],'layer selection keeps whole-plate legend');
+    await legendButton('アイロン').click();
+    assert.equal(await legendButton('アイロン').getAttribute('aria-pressed'),'false');
+    await page.locator('#color').selectOption('speed');
+    await page.locator('#color').selectOption('feature');
+    assert.deepEqual(await legendKeys(),['travel','1','13'],'hidden paths retain a restore button');
+    await send({type:'toolpath',index:0,data:packed('M83\n;TYPE:Prime tower\nG1 X10 Z.2 E1')});
+    assert.deepEqual(await legendKeys(),['14'],'absent categories and absent travel disappear for a new plate');
+    await send({type:'toolpath',index:0,data:packed('M83\n;TYPE:Brand new feature\nG1 X10 Z.2 E1')});
+    assert.deepEqual(await legendKeys(),['0'],'actual unknown extrusion remains under Other');
+    await send({type:'toolpath',index:0,data:packed(sparseFeatures)});
+    assert.equal(await legendButton('アイロン').getAttribute('aria-pressed'),'false','category preferences survive absence in another plate');
+    const classified='M83\n;LAYER:0\n;TYPE:Support\nG1 X10 Z.2 E1\nG0 Y2\n;TYPE:SUPPORT-INTERFACE\nG1 X0 E1\nG0 Y4\n;TYPE:Overhang perimeter\nG1 X10 E1\nG0 Y6\n;TYPE:Floating vertical shell\nG1 X0 E1';
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'line',travel:false}});
+    await send({type:'toolpath',index:0,data:packed(classified)});
+    assert.equal(await visibleCount(),4);
+    assert.match(await legendButton('サポート接触面').getAttribute('title'),/SUPPORT-INTERFACE \(1\)/);
+    assert.match(await legendButton('オーバーハング壁').getAttribute('title'),/Overhang perimeter/);
+    assert.match(await page.locator('#details').innerText(),/元の線種: Floating vertical shell/);
+    await legendButton('サポート接触面').click(); assert.equal(await visibleCount(),3);
+    await legendButton('オーバーハング壁').click(); assert.equal(await visibleCount(),2);
+    assert.match(await legendButton('フローティング・バーティカル・シェル').getAttribute('title'),/Floating vertical shell/);
+    assert.match(await page.locator('#details').innerText(),/フローティング・バーティカル・シェル/);
+    await legendButton('フローティング・バーティカル・シェル').click(); assert.equal(await visibleCount(),1);
+    await send({type:'toolpath',index:0,data:packed(classified)});
+    assert.equal(await visibleCount(),1,'new feature filters survive reload');
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'line',travel:false}});
+    await page.setViewportSize({width:1280,height:900});
+    await page.screenshot({path:'test-results/feature-categories.png'});
+    await english.evaluate(data=>window.dispatchEvent(new MessageEvent('message',{data})),{type:'toolpath',index:0,data:packed(classified)});
+    await english.locator('#color').selectOption('feature');
+    assert.equal(await english.getByRole('button',{name:'Overhang wall',exact:true}).count(),1);
+    assert.equal(await english.getByRole('button',{name:'Floating vertical shell',exact:true}).count(),1);
+    assert.match(await english.getByRole('button',{name:'Support interface',exact:true}).getAttribute('title'),/Source feature/);
+    const finishing='M83\n;LAYER:0\n;TYPE:Ironing\nG1 X10 Z.2 E.01\nG0 Y2\n;TYPE:Prime tower\nG1 X0 E1\nG0 Y4\n;TYPE:Gap infill\nG1 X10 E.1';
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'line',travel:false}});
+    await send({type:'toolpath',index:0,data:packed(finishing)});
+    assert.equal(await visibleCount(),3);
+    for(const [label,raw,count] of [['アイロン','Ironing',2],['プライムタワー','Prime tower',1],['ギャップ充填','Gap infill',0]]) {
+      assert.match(await legendButton(label).getAttribute('title'),new RegExp(raw));
+      await legendButton(label).click(); assert.equal(await visibleCount(),count);
+    }
+    await send({type:'toolpath',index:0,data:packed(finishing)});
+    assert.equal(await visibleCount(),0,'finishing feature filters survive reload');
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'bead',travel:false}});
+    assert.equal(await visibleCount(),3);
+    await page.screenshot({path:'test-results/finishing-categories.png'});
+    await english.evaluate(data=>window.dispatchEvent(new MessageEvent('message',{data})),{type:'toolpath',index:0,data:packed(finishing)});
+    for(const label of ['Ironing','Prime tower','Gap infill']) assert.equal(await english.getByRole('button',{name:label,exact:true}).count(),1);
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'line',travel:false}});
+    // Local samples are ignored by Git; exercise all available sliced samples.
+    const sampleDir=path.resolve(__dirname,'../sample');
+    const sampleNames=fs.existsSync(sampleDir)?fs.readdirSync(sampleDir).filter(name=>/^sample.*\.gcode(?:\.3mf)?$/i.test(name)).sort():[];
+    for(const filename of sampleNames) {
+      const source=path.resolve(__dirname,'../sample',filename);
+      if(!fs.existsSync(source)) continue;
+      const bytes=fs.readFileSync(source);
+      const archive=filename.endsWith('.3mf')?require('../src/archive').inspectArchive(bytes):{plates:[{name:filename,gcode:bytes.toString('utf8')}],structure:{}};
+      await send({type:'loading'});
+      await send({type:'archive',filename,plates:archive.plates.map(p=>p.name),structure:archive.structure});
+      const data=packed(archive.plates[0].gcode);
+      await send({type:'toolpath',index:0,data});
+      assert.match(await page.locator('#status').innerText(),new RegExp(`${data.layers.length} 層`));
+      const expectedEvents=new Set(Buffer.from(data.eventKinds,'base64'));
+      assert.deepEqual(await eventKeys(),['retract','unretract','wipe','outerStart'].filter((_,kind)=>expectedEvents.has(kind)),`${filename}: marker legend matches whole-plate events`);
+      for(const mode of ['feature','speed','tool']) {
+        await page.locator('#color').selectOption(mode);
+        if(mode==='feature') {
+          const expected=[...new Set(parseGcode(archive.plates[0].gcode).types)].sort((a,b)=>a-b);
+          const keys=expected.filter(id=>id!==9).map(String);
+          if(expected.includes(9)) keys.unshift('travel');
+          assert.deepEqual(await legendKeys(),keys,`${filename}: legend matches actual whole-plate categories`);
+        }
+        if(mode==='speed') {
+          const parsed=parseGcode(archive.plates[0].gcode),bands=new Set();let hasTravel=false;
+          for(let i=0;i<parsed.segmentCount;i++) {
+            if(parsed.types[i]===9) {hasTravel=true;continue;}
+            const speed=parsed.speeds[i];
+            bands.add(speed<50?0:speed<100?1:speed<150?2:speed<200?3:speed<300?4:5);
+          }
+          const keys=[...bands].sort((a,b)=>a-b).map(String);
+          if(hasTravel) keys.unshift('travel');
+          assert.deepEqual(await speedKeys(),keys,`${filename}: speed legend matches whole-plate extrusion speeds`);
+        }
+        assert.ok(await page.locator('#legend button').count()>0,`${filename}: ${mode} legend`);
+        assert.equal(await page.locator('#play').isEnabled(),true);
+      }
+      console.log(`PASS local sample: ${filename}, ${data.layers.length} layers, ${data.segmentCount} segments`);
+    }
     assert.deepEqual(englishErrors,[]);
     assert.deepEqual(errors,[]); console.log('PASS UI: WebGL rendering, layer range, single layer, path steps/playback, colors, travel, plates, reload, mesh-only, error and narrow layout.');
   } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); }

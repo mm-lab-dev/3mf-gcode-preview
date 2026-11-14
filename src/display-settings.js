@@ -1,7 +1,7 @@
 const colors=new Set(['feature','speed','tool']);
 const events=['retract','unretract','wipe','outerStart'];
 const validCategory={
-  feature:key=>/^[0-8]$/.test(key),
+  feature:key=>/^(?:[0-8]|1[0-5])$/.test(key),
   speed:key=>/^[0-5]$/.test(key),
   tool:key=>/^\d{1,5}$/.test(key)&&Number(key)<=65535
 };
