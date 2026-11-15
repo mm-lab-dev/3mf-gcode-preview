@@ -6,6 +6,7 @@ import { parseParameters } from './parameters';
 import { createBeadMesh, createBeadCaps, connected, writeBead, writeBeadCap, uploadBeads } from './bead';
 import { translator, localizeDiagnostic } from './i18n';
 import { normalizeDisplaySettings } from './display-settings';
+import { createMarkerOcclusion } from './marker-occlusion';
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const locale=document.documentElement.lang==='ja'?'ja':'en', t=translator(locale), numberLocale=locale==='ja'?'ja-JP':'en-US';
@@ -20,13 +21,21 @@ const eventOptions=[['retract',0,t('retract'),'#e43dc5'],['unretract',1,t('unret
 const hiddenCategories={feature:new Set(),speed:new Set(),tool:new Set()};
 let data, pathObjects=[], eventObjects=[], model, animation, timer, renderer, controls, fitBox, selectedPlate=0, structurePlates=[], parameters=[], structureNodes=new Map(), selectedNode;
 let travelVisible=false;
-let eventVisible={retract:true,unretract:true,wipe:true,outerStart:true};
+let eventVisible={retract:true,unretract:true,wipe:true,outerStart:true,currentPosition:true};
 let displaySettings=normalizeDisplaySettings();
 let visibilityVersion=0;
+const markerOcclusion=createMarkerOcclusion();
 function requestRender() { if(renderer&&animation===undefined) animation=requestAnimationFrame(render); }
 function render() {
   animation=undefined;
   const moving=controls.update();
+  // Keep enough depth precision to distinguish 0.1 mm layers, including on
+  // beds positioned far from the world origin. Follow zoom instead of using
+  // an unnecessarily close fixed near plane.
+  const near=Math.max(camera.position.distanceTo(controls.target)/100,0.001);
+  if(camera.near!==near) { camera.near=near; camera.updateProjectionMatrix(); }
+  if(data&&(marker.visible||eventObjects.some(object=>object.visible&&object.count)))
+    markerOcclusion.renderPaths(renderer,scene,camera,[marker,...eventObjects,bed,...pathObjects.filter(object=>object.userData.category==='travel')]);
   renderer.render(scene,camera);
   if(moving) requestRender();
 }
@@ -42,11 +51,15 @@ function createGrid(size) {
   return grid;
 }
 let bed=createGrid(gridSize);
-const marker = new THREE.Mesh(new THREE.SphereGeometry(0.7,12,8), new THREE.MeshBasicMaterial({color:0xffffff})); marker.visible=false; scene.add(marker);
+const marker = new THREE.Mesh(new THREE.SphereGeometry(0.7,12,8), markerOcclusion.material(0xffffff)); marker.visible=false; scene.add(marker);
+marker.geometry.setAttribute('markerLayerBounds',new THREE.BufferAttribute(new Float32Array(marker.geometry.attributes.position.count*2),2));
 const eventMatrix=new THREE.Matrix4();
+const wipeStart=new THREE.Vector3(), wipeEnd=new THREE.Vector3(), wipeDirection=new THREE.Vector3();
+const wipeRotation=new THREE.Quaternion(), wipeScale=new THREE.Vector3(), wipeUp=new THREE.Vector3(0,1,0);
+const wipeRadius=0.05;
 function stop() { if(timer) clearInterval(timer); timer=undefined; $('play').textContent='▶'; $('play').setAttribute('aria-label',t('play')); }
 function disposeObject(object) { scene.remove(object); object.traverse(child=>{ child.geometry?.dispose(); const materials=Array.isArray(child.material)?child.material:[child.material]; materials.forEach(material=>material?.dispose()); }); }
-function clear() { stop(); pathObjects.forEach(disposeObject); pathObjects=[]; eventObjects.forEach(disposeObject); eventObjects=[]; if(model) disposeObject(model); model=undefined; data=undefined; fitBox=undefined; marker.visible=false; $('time-summary').hidden=true; ['upper','lower','upper-number','lower-number','step','play','single','color','render-mode'].forEach(id=>$(id).disabled=true); $('layer-label').textContent='—'; $('step-label').textContent='—'; $('event-legend').replaceChildren(); $('path-legend-heading').hidden=true; $('legend').replaceChildren(); document.querySelectorAll('.layer-track').forEach(track=>track.classList.remove('has-range')); requestRender(); }
+function clear() { stop(); pathObjects.forEach(disposeObject); pathObjects=[]; eventObjects.forEach(disposeObject); eventObjects=[]; if(model) disposeObject(model); model=undefined; data=undefined; fitBox=undefined; marker.visible=false; $('time-summary').hidden=true; ['upper','lower','upper-number','lower-number','step','play','single','color','render-mode'].forEach(id=>$(id).disabled=true); $('layer-label').textContent='—'; $('step-label').textContent='—'; $('event-legend').replaceChildren(); $('event-section').hidden=true; $('path-section').hidden=true; $('legend').replaceChildren(); document.querySelectorAll('.layer-track').forEach(track=>track.classList.remove('has-range')); requestRender(); }
 function warning(messages=[]) { $('warning').hidden=!messages.length; $('warning').textContent=messages.map(message=>localizeDiagnostic(message,t,locale)).join('\n'); }
 function routineGcodeWarning(message) {
   return message==='Special tool selection commands are not simulated.'
@@ -174,7 +187,7 @@ function recolor() {
     Object.assign(object.userData,{indices,category,bead}); object.frustumCulled=false; scene.add(object); pathObjects.push(object);
   }
   $('legend').replaceChildren();
-  $('path-legend-heading').hidden=false;
+  $('path-section').hidden=false;
   const mode=$('color').value;
   // Groups contain all parsed paths, regardless of layer range or visibility.
   // Hiding a category must keep its button available so it can be restored.
@@ -191,11 +204,9 @@ function recolor() {
   }
   $('event-legend').replaceChildren();
   const presentEvents=new Set(data.eventKinds);
-  if(presentEvents.size) {
-    const heading=document.createElement('strong'); heading.className='legend-heading'; heading.textContent=t('markerHeading'); $('event-legend').append(heading);
-  }
-  for(const [key,kind,name,color] of eventOptions) {
-    if(!presentEvents.has(kind)) continue;
+  $('event-section').hidden=!(presentEvents.size||data.segmentCount);
+  for(const [key,kind,name,color] of [...eventOptions,['currentPosition',null,t('currentPosition'),'#ffffff']]) {
+    if(kind===null?!data.segmentCount:!presentEvents.has(kind)) continue;
     const row=document.createElement('button'), swatch=document.createElement('i'), indicator=document.createElement('span');
     row.type='button'; row.dataset.event=key; row.dataset.label=name; row.setAttribute('aria-label',name);
     swatch.style.backgroundColor=color; swatch.setAttribute('aria-hidden','true'); indicator.className='legend-state'; indicator.setAttribute('aria-hidden','true');
@@ -209,9 +220,17 @@ function createEventObjects() {
   const grouped=eventOptions.map(()=>[]);
   for(let i=0;i<data.eventCount;i++) grouped[data.eventKinds[i]]?.push(i);
   for(const [key,kind,,color] of eventOptions) {
-    const indices=grouped[kind], geometry=kind===3?new THREE.OctahedronGeometry(0.3):new THREE.SphereGeometry(0.24,10,8);
-    const object=new THREE.InstancedMesh(geometry,new THREE.MeshBasicMaterial({color,depthTest:true,depthWrite:true}),indices.length);
+    const indices=grouped[kind], geometry=kind===2?new THREE.CylinderGeometry(1,1,1,8):kind===3?new THREE.OctahedronGeometry(0.3):new THREE.SphereGeometry(0.24,10,8);
+    geometry.setAttribute('markerLayerBounds',new THREE.InstancedBufferAttribute(new Float32Array(indices.length*2),2));
+    const object=new THREE.InstancedMesh(geometry,markerOcclusion.material(color),indices.length);
     object.count=0; object.frustumCulled=false; object.userData={kind:key,indices,orders:indices.map(i=>data.eventIndices[i])};
+    if(kind===2) {
+      // Round joints connect tessellated wipe moves into a continuous thin path.
+      const geometry=new THREE.SphereGeometry(1,8,6);
+      geometry.setAttribute('markerLayerBounds',new THREE.InstancedBufferAttribute(new Float32Array(indices.length*4),2));
+      const joints=new THREE.InstancedMesh(geometry,markerOcclusion.material(color),indices.length*2);
+      joints.count=0; joints.frustumCulled=false; object.add(joints); object.userData.joints=joints;
+    }
     scene.add(object); eventObjects.push(object);
   }
 }
@@ -220,7 +239,7 @@ function fit(top=false) {
   const center=fitBox.getCenter(new THREE.Vector3()), size=fitBox.getSize(new THREE.Vector3());
   const extent=Math.max(size.x,size.y,size.z,10), distance=extent/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)))*1.5/Math.min(camera.aspect,1);
   controls.target.copy(center); camera.position.copy(center).add(top ? new THREE.Vector3(0,-0.001,distance) : new THREE.Vector3(distance*0.65,-distance*0.85,distance*0.75));
-  camera.near=Math.max(distance/10000,0.001); camera.far=distance*100; camera.updateProjectionMatrix(); controls.update();
+  camera.near=Math.max(distance/100,0.001); camera.far=distance*100; camera.updateProjectionMatrix(); controls.update();
   const nextGridSize=Math.ceil(Math.max(size.x,size.y,20)/(gridStep*2))*gridStep*2;
   if(nextGridSize!==gridSize) {
     disposeObject(bed);
@@ -236,12 +255,15 @@ function saveDisplaySettings() {
     renderMode:$('render-mode').value,
     travel:travelVisible,
     eventVisible,
+    legendExpanded:{markers:$('event-section').open,paths:$('path-section').open},
     hiddenCategories:Object.fromEntries(Object.entries(hiddenCategories).map(([mode,hidden])=>[mode,[...hidden]]))
   });
   vscode.postMessage({type:'displaySettingsChanged',settings:displaySettings});
 }
 function applyDisplaySettings(value) {
   displaySettings=normalizeDisplaySettings(value);
+  $('event-section').open=displaySettings.legendExpanded.markers;
+  $('path-section').open=displaySettings.legendExpanded.paths;
   $('color').value=displaySettings.color;
   $('render-mode').value=displaySettings.renderMode;
   travelVisible=displaySettings.travel;
@@ -313,6 +335,9 @@ function update(changed, resetStep=false) {
     object.visible=categoryVisible(object.userData.category);
     if(object.visible) visibleSegments+=finish-begin;
   }
+  const index=step>0?end-1:low.start, current=layerForSegment(index);
+  const currentLayer=data.layers.indexOf(current);
+  const layerHeight=markerLayerHeight(currentLayer,index);
   for(const object of eventObjects) {
     const {indices,orders,kind}=object.userData;
     const begin=lowerBound(orders,low.start), finish=upperBound(orders,end);
@@ -321,21 +346,53 @@ function update(changed, resetStep=false) {
       const event=indices[i], layer=data.eventLayers[event];
       if(layer<displayedLower-1||layer>upper-1) continue;
       const offset=event*3;
-      eventMatrix.makeTranslation(data.eventPositions[offset],data.eventPositions[offset+1],data.eventPositions[offset+2]+(kind==='outerStart'?0:0.22));
+      const eventLayer=data.layers[layer];
+      const segment=Math.max(eventLayer.start,Math.min(data.eventIndices[event]-1,eventLayer.end-1));
+      const height=markerLayerHeight(layer,segment);
+      object.geometry.attributes.markerLayerBounds.setXY(drawn,eventLayer.z-height,eventLayer.z);
+      if(kind==='wipe') {
+        // Wipe events are recorded immediately after each retained motion, so
+        // its actual start/end (including arc tessellation) are already packed.
+        const pathOffset=(data.eventIndices[event]-1)*6;
+        wipeStart.fromArray(data.positions,pathOffset); wipeEnd.fromArray(data.positions,pathOffset+3);
+        wipeDirection.subVectors(wipeEnd,wipeStart);
+        const length=wipeDirection.length();
+        wipeRotation.setFromUnitVectors(wipeUp,wipeDirection.divideScalar(length));
+        wipeScale.set(wipeRadius,length,wipeRadius);
+        const joints=object.userData.joints;
+        for(let endpoint=0;endpoint<2;endpoint++) {
+          const joint=drawn*2+endpoint;
+          eventMatrix.makeScale(wipeRadius,wipeRadius,wipeRadius);
+          eventMatrix.setPosition(endpoint?wipeEnd:wipeStart);
+          joints.setMatrixAt(joint,eventMatrix);
+          joints.geometry.attributes.markerLayerBounds.setXY(joint,eventLayer.z-height,eventLayer.z);
+        }
+        eventMatrix.compose(wipeStart.add(wipeEnd).multiplyScalar(0.5),wipeRotation,wipeScale);
+      } else eventMatrix.makeTranslation(data.eventPositions[offset],data.eventPositions[offset+1],data.eventPositions[offset+2]);
       object.setMatrixAt(drawn++,eventMatrix);
     }
-    object.count=drawn; if(drawn) object.instanceMatrix.needsUpdate=true;
+    object.count=drawn; if(drawn) { object.instanceMatrix.needsUpdate=true; object.geometry.attributes.markerLayerBounds.needsUpdate=true; }
     object.visible=eventVisible[kind];
+    const joints=object.userData.joints;
+    if(joints) { joints.count=drawn*2; if(drawn) { joints.instanceMatrix.needsUpdate=true; joints.geometry.attributes.markerLayerBounds.needsUpdate=true; } }
   }
   updateLegend();
-  marker.scale.setScalar($('render-mode').value==='bead'?0.35:1);
-  marker.visible=step>0&&categoryVisible(categoryFor(end-1));
+  const markerScale=$('render-mode').value==='bead'?0.35:1;
+  marker.scale.setScalar(markerScale);
+  const bounds=marker.geometry.attributes.markerLayerBounds;
+  for(let i=0;i<bounds.count;i++) bounds.setXY(i,current.z-layerHeight,current.z);
+  bounds.needsUpdate=true;
+  marker.visible=eventVisible.currentPosition&&step>0&&categoryVisible(categoryFor(end-1));
   if(step>0) marker.position.fromArray(data.positions,(end-1)*6+3);
-  const index=step>0?end-1:low.start, current=layerForSegment(index);
   $('details').textContent=t('visibleSegments',formatNumber(visibleSegments),current.number,formatNumber(current.extrusion),formatNumber(current.travel),featureName(data.types[index]),(data.speeds[index]??0).toFixed(1),data.tools[index]??0,data.lines[index]??'—');
   const source=data.sourceFeatures?.[data.sourceTypes?.[index]];
   if(source&&data.types[index]!==9) $('details').textContent+=` | ${t('sourceFeature')}: ${source.name||t('noFeatureTag')}`;
   rememberRange(); requestRender();
+}
+function markerLayerHeight(layer,index) {
+  const z=data.layers[layer].z, height=data.heights[index]||0.2;
+  const spacing=layer>0?z-data.layers[layer-1].z:z;
+  return Math.max(0.001,Math.min(height,spacing>0?spacing:height));
 }
 function lowerBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(a[mid]<value) lo=mid+1; else hi=mid; } return lo; }
 function upperBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(a[mid]<=value) lo=mid+1; else hi=mid; } return lo; }
@@ -391,6 +448,10 @@ $('layer-rail').addEventListener('pointermove',moveRail);
 for(const type of ['pointerup','pointercancel','lostpointercapture']) $('layer-rail').addEventListener(type,()=>{railDrag=undefined;});
 for(const side of ['upper','lower']) $(`${side}-number`).addEventListener('change',()=>{ if(!data) return; const value=Number($(`${side}-number`).value); $(side).value=String(Number.isFinite(value)?Math.max(1,Math.min(data.layers.length,Math.round(value))):1); stop(); update(side,true); });
 $('single').addEventListener('change',()=>{ stop(); update($('single').checked?'upper':'lower',true); });
+for(const id of ['event-section','path-section']) $(id).addEventListener('toggle',()=>{
+  const key=id==='event-section'?'markers':'paths';
+  if($(id).open!==displaySettings.legendExpanded[key]) saveDisplaySettings();
+});
 $('color').addEventListener('change',()=>{ recolor(); update(); saveDisplaySettings(); });
 $('render-mode').addEventListener('change',()=>{ stop(); recolor(); update(); saveDisplaySettings(); });
 $('step').addEventListener('input',()=>{ stop(); update(); });
@@ -429,6 +490,6 @@ try {
   const observer=new ResizeObserver(()=>{ const width=$('viewport').clientWidth,height=$('viewport').clientHeight; renderer.setSize(width,height); camera.aspect=width/Math.max(height,1); camera.updateProjectionMatrix(); requestRender(); }); observer.observe($('viewport'));
   requestRender();
   renderer.domElement.addEventListener('webglcontextlost',event=>{ event.preventDefault(); stop(); status(t('webglLost')); });
-  window.addEventListener('unload',()=>{ stop(); cancelAnimationFrame(animation); observer.disconnect(); controls.dispose(); renderer.dispose(); });
+  window.addEventListener('unload',()=>{ stop(); cancelAnimationFrame(animation); observer.disconnect(); controls.dispose(); markerOcclusion.dispose(); renderer.dispose(); });
   vscode.postMessage({type:'ready'});
 } catch(error) { status(t('webglStartError')); warning([t('webglRequired',error.message)]); }

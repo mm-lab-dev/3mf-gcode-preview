@@ -1,5 +1,15 @@
 # Verification record
 
+## 0.5.0 — 2026-11-16
+
+- Node.js tests: 39 passed, including the saved current-position marker preference, independent legend expansion preferences, defaults for older settings, and connected wipe motion geometry including tessellated arcs.
+- Expandable legends: Playwright checks independent mouse/Enter/Space operation, saved-state application, plate reload and color-mode persistence, unchanged WebGL output and marker visibility, Japanese/English headings, and narrow layout. Visually checked `test-results/expandable-legends.png`.
+- Playwright UI: passed, including all marker toggles OFF in line and filament modes (no colored markers or white cursor), independent cursor restoration, lower-layer marker visibility in cumulative and angled side views, single-layer isolation, marker restoration when stepping back into a lower layer, full masking by an upper path, restored round markers when the occluder is hidden, and partial-contact masking. All 15 local sliced samples passed the existing checks.
+- Wipe-path UI: consecutive moves form one thin continuous stroke rather than spheres. In `sample/sample_bambu_studio2.gcode.3mf`, layer 302 renders twelve wipe motion segments as two connected strokes; checked in filament and line modes, with the wipe toggle and playback progress. Visually reviewed `test-results/wipe-layer302.png`.
+- Build and diff whitespace checks passed. Extension Host checks were not rerun.
+- `sample/16.gcode` regression: isolate first-layer events and review layers 1–2 from top and angled views at normal and enlarged zoom. Detected marker-colored pixels over solid second-layer paths: 0 in all four views after the fix. The prior shader/camera behavior failed the same check with 774 pixels in the angled view and 1,675 with the earlier zoom setting. Exposed first-layer markers remain visible from the side; the input SHA-256 remains unchanged. `npm run test:ui` includes this check when the local sample exists (otherwise it reports a skip). Review images and measurements are in `test-results/sample16-layer2-*.png` and `test-results/sample16-markers.json`.
+- Version 0.5.0 is set in the extension manifest and both root lockfile entries. `3mf-gcode-preview-0.5.0.vsix` built successfully: 22 files, 3,417,431 bytes. Its manifest version, bundled code, Japanese/English translations, changelog and images were inspected; local samples, source scripts and tests are absent. README usage text is current, with relative links rewritten by vsce. SHA-256: `dfa2ebef2a53a50d5dfa0ef51edc77dece87fe5a1fe736c4c0a98918d0505109`. Inspection metadata is in `test-results/release-0.5.0.json`. Marketplace publication has not been performed.
+
 ## 0.4.0 — 2026-11-15
 
 - Node.js tests: 37 passed. Coverage includes standalone text G-code loading, binary rejection without stale state, explicit cross-slicer aliases, unknown names, source labels and segment counts, worker transfers/repeated parsing, and saved category filters.

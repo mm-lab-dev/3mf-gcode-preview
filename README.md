@@ -36,7 +36,7 @@ Another model shows how the two path displays handle a dense, detailed region:
 
 For 3MF files, open **Structure** to browse the project, plates, objects, and parts. Select an item to view its available settings, and use the search field to find a parameter or value. The information shown depends on what the file contains.
 
-The viewer also shows print-time estimates when available, plus optional markers for retraction, unretraction, wipes, and outer-wall path starts.
+The viewer also shows available print-time estimates and optional action markers. Click the marker or toolpath heading to expand or collapse its list.
 
 <img src="resources/readme/structure.png" width="480" alt="Project tree and project-level settings from the sliced cup 3MF">
 

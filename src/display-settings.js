@@ -1,5 +1,5 @@
 const colors=new Set(['feature','speed','tool']);
-const events=['retract','unretract','wipe','outerStart'];
+const events=['retract','unretract','wipe','outerStart','currentPosition'];
 const validCategory={
   feature:key=>/^(?:[0-8]|1[0-5])$/.test(key),
   speed:key=>/^[0-5]$/.test(key),
@@ -20,6 +20,7 @@ function normalizeDisplaySettings(value) {
     renderMode:input.renderMode==='line'?'line':'bead',
     travel:input.travel===true,
     eventVisible:Object.fromEntries(events.map(key=>[key,input.eventVisible?.[key]!==false])),
+    legendExpanded:{markers:input.legendExpanded?.markers!==false,paths:input.legendExpanded?.paths!==false},
     hiddenCategories
   };
 }

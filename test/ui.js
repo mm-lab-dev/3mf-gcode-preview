@@ -17,13 +17,15 @@ function markerPixels(buffer,kind) {
     const r=png.data[i],g=png.data[i+1],b=png.data[i+2];
     if(kind==='retract'&&r>130&&b>130&&g<110) count++;
     if(kind==='unretract'&&b>130&&g>130&&r<110) count++;
-    if(kind==='wipe'&&r>130&&g>r*.78&&b<110) count++;
+    if(kind==='wipe'&&r>130&&g>r*.88&&b<110) count++;
+    if(kind==='white'&&r>210&&g>210&&b>210&&Math.max(r,g,b)-Math.min(r,g,b)<15) count++;
   }
   return count;
 }
-function orangeComponents(buffer) {
+const orangeComponents=buffer=>colorComponents(buffer);
+function colorComponents(buffer,kind='orange') {
   const png=PNG.sync.read(buffer), mask=new Uint8Array(png.width*png.height), sizes=[];
-  for(let i=0;i<mask.length;i++) { const p=i*4; if(png.data[p]>100&&png.data[p]>png.data[p+1]*1.25&&png.data[p+1]>png.data[p+2]*1.15) mask[i]=1; }
+  for(let i=0;i<mask.length;i++) { const p=i*4,r=png.data[p],g=png.data[p+1],b=png.data[p+2]; if(kind==='wipe'?r>180&&g>150&&g>r*.88&&b<110:r>100&&r>g*1.25&&g>b*1.15) mask[i]=1; }
   for(let i=0;i<mask.length;i++) {
     if(!mask[i]) continue;
     let size=0; const stack=[i]; mask[i]=0;
@@ -59,6 +61,7 @@ async function main() {
     browser=await chromium.launchPersistentContext(path.resolve('test-results/ui-profile'),{headless:true,viewport:{width:1200,height:850},args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
     const page=await browser.newPage(), errors=[];
     page.on('pageerror',error=>errors.push(error.message));
+    page.on('console',message=>{ if(message.type()==='error'&&/THREE.WebGLProgram|GL_INVALID|GLSL/.test(message.text())) errors.push(message.text()); });
     await page.addInitScript(()=>{
       let state; window.sent=[]; window.__webglDraws=0;
       window.acquireVsCodeApi=()=>({postMessage:message=>window.sent.push(message),getState:()=>state,setState:value=>{state=value;}});
@@ -82,12 +85,35 @@ async function main() {
     assert.doesNotMatch(await page.locator('#warning').innerText(),/unsupported G command|firmware behavior|Special tool selection/);
     await send({type:'toolpath',index:0,data:packed(sliced)});
     await page.locator('#upper-number').fill('3'); await page.locator('#upper-number').press('Tab');
-    assert.equal(await page.locator('#event-legend .legend-heading').innerText(),'操作マーカー');
+    assert.equal(await page.locator('#event-legend-heading').innerText(),'操作マーカー');
     assert.equal(await page.locator('#path-legend-heading').innerText(),'経路');
-    const eventHeadingBounds=await page.locator('#event-legend .legend-heading').boundingBox();
+    const eventHeadingBounds=await page.locator('#event-legend-heading').boundingBox();
     const pathHeadingBounds=await page.locator('#path-legend-heading').boundingBox();
     const pathListBounds=await page.locator('#legend').boundingBox();
     assert.ok(eventHeadingBounds.y<pathHeadingBounds.y&&pathHeadingBounds.y<pathListBounds.y,'marker and path headings must separate their lists');
+    const beforeCollapse=await page.locator('canvas').screenshot();
+    const markerStates=await page.locator('#event-legend button').evaluateAll(rows=>rows.map(row=>row.getAttribute('aria-pressed')));
+    await page.locator('#event-legend-heading').click();
+    assert.equal(await page.locator('#event-section').evaluate(el=>el.open),false);
+    assert.equal(await page.locator('#event-legend button').first().isVisible(),false);
+    assert.equal(await page.locator('#legend button').first().isVisible(),true,'lists collapse independently');
+    await page.locator('#path-legend-heading').focus(); await page.keyboard.press('Enter');
+    assert.equal(await page.locator('#legend button').first().isVisible(),false);
+    assert.deepEqual(await page.locator('canvas').screenshot(),beforeCollapse,'collapsing lists preserves the rendered paths and markers');
+    await page.waitForFunction(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1)?.settings.legendExpanded.paths===false);
+    const collapsedSettings=await page.evaluate(()=>window.sent.filter(m=>m.type==='displaySettingsChanged').at(-1).settings);
+    assert.deepEqual(collapsedSettings.legendExpanded,{markers:false,paths:false});
+    await send({type:'toolpath',index:0,data:packed(sliced)});
+    assert.equal(await page.locator('#event-section').evaluate(el=>el.open),false,'plate reload preserves collapsed sections');
+    await page.locator('#color').selectOption('speed');
+    assert.equal(await page.locator('#path-section').evaluate(el=>el.open),false,'changing color mode preserves collapsed sections');
+    await send({type:'displaySettings',settings:{...collapsedSettings,legendExpanded:{markers:true,paths:false}}});
+    assert.equal(await page.locator('#event-legend button').first().isVisible(),true,'saved settings restore each section independently');
+    assert.deepEqual(await page.locator('#event-legend button').evaluateAll(rows=>rows.map(row=>row.getAttribute('aria-pressed'))),markerStates,'expanding preserves marker visibility');
+    await page.locator('#path-legend-heading').focus(); await page.keyboard.press('Space');
+    assert.equal(await page.locator('#legend button').first().isVisible(),true);
+    await page.locator('#color').selectOption('feature');
+    await page.screenshot({path:'test-results/expandable-legends.png'});
     const viewportWidth=(await page.locator('#viewport').boundingBox()).width;
     const viewportBox=await page.locator('#viewport').boundingBox(), fullRailBox=await page.locator('.layer-track').boundingBox(), panelBox=await page.locator('#layers').boundingBox();
     assert.ok(fullRailBox.x>viewportBox.x+viewportBox.width&&fullRailBox.x<panelBox.x,'full-height layer rail sits between the preview and settings panel');
@@ -332,6 +358,21 @@ async function main() {
     await outerStartButton.click(); assert.equal(await outerStartButton.getAttribute('aria-pressed'),'false');
     assert.notEqual(createHash('sha256').update(eventsImage).digest('hex'),createHash('sha256').update(await page.locator('canvas').screenshot()).digest('hex'),'outer-wall start toggle must change the WebGL image');
     await outerStartButton.click();
+    // All rendered markers, including the formerly unlisted white cursor,
+    // must be controlled by the legend in both rendering modes.
+    for(const mode of ['line','bead']) {
+      await page.locator('#render-mode').selectOption(mode);
+      for(const button of await page.locator('#event-legend button').all()) {
+        if(await button.getAttribute('aria-pressed')==='true') await button.click();
+      }
+      const hiddenImage=await page.locator('canvas').screenshot();
+      for(const kind of ['retract','unretract','wipe','white']) assert.ok(markerPixels(hiddenImage,kind)<3,`${mode}: all markers OFF must remove ${kind}`);
+      await page.getByRole('button',{name:'経路の現在位置',exact:true}).click();
+      assert.ok(markerPixels(await page.locator('canvas').screenshot(),'white')>5,`${mode}: current position can be restored independently`);
+      for(const button of await page.locator('#event-legend button').all()) {
+        if(await button.getAttribute('aria-pressed')==='false') await button.click();
+      }
+    }
     await page.locator('#step').evaluate(el=>{el.value='0';el.dispatchEvent(new Event('input'));});
     const startImage=await page.locator('canvas').screenshot();
     for(const kind of ['retract','unretract','wipe']) assert.ok(markerPixels(startImage,kind)<3,'future events must stay hidden at path start');
@@ -342,15 +383,70 @@ async function main() {
     await page.getByRole('button',{name:'ワイプ',exact:true}).click();
     const twoLayers=annotated+'\n; CHANGE_LAYER\n; Z_HEIGHT: 0.4\nG0 X0 Y2 Z0.4\n; FEATURE: Outer wall\nG1 X10 E0.2';
     await send({type:'toolpath',index:0,data:packed(twoLayers)});
+    await page.locator('#single').uncheck();
+    await page.locator('#lower-number').fill('1'); await page.locator('#lower-number').press('Tab');
+    await page.locator('#upper-number').fill('2'); await page.locator('#upper-number').press('Tab');
+    assert.ok(markerPixels(await page.locator('canvas').screenshot(),'retract')>5,'cumulative view must retain markers from lower layers');
+    await page.locator('#iso').click();
+    assert.ok(markerPixels(await page.locator('canvas').screenshot(),'retract')>5,'lower-layer markers remain visible from an angled side view');
+    await page.screenshot({path:'test-results/multi-layer-markers-side.png'});
+    await page.locator('#top').click();
+    const firstLayerEnd=parseGcode(twoLayers).layers[0].end;
+    await page.locator('#step').evaluate((el,end)=>{el.value=String(end);el.dispatchEvent(new Event('input'));},firstLayerEnd);
+    assert.ok(markerPixels(await page.locator('canvas').screenshot(),'retract')>5,'playback in the lower layer restores its markers');
+    await page.locator('#step').evaluate(el=>{el.value=el.max;el.dispatchEvent(new Event('input'));});
     await page.locator('#single').check();
     await page.locator('#upper-number').fill('2'); await page.locator('#upper-number').press('Tab');
     assert.ok(markerPixels(await page.locator('canvas').screenshot(),'retract')<3,'lower-layer events must be hidden in single-layer view');
     await page.locator('#upper-number').fill('1'); await page.locator('#upper-number').press('Tab');
     assert.ok(markerPixels(await page.locator('canvas').screenshot(),'retract')>5,'returning to the lower layer restores its events');
+    const coveredMarker='M83\n; CHANGE_LAYER\n; Z_HEIGHT: 0.2\n; HEIGHT: 0.2\n; WIDTH: 0.4\n; FEATURE: Outer wall\nG0 X0 Y0 Z0.2\nG1 X5 E1\nG10\n; CHANGE_LAYER\n; Z_HEIGHT: 0.4\n; WIDTH: 1\n; FEATURE: Inner wall\nG0 X0 Y0 Z0.4\nG1 X10 E1';
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'bead'}});
+    await send({type:'toolpath',index:0,data:packed(coveredMarker)});
+    await page.locator('#single').uncheck();
+    await page.locator('#upper-number').fill('2'); await page.locator('#upper-number').press('Tab');
+    await page.locator('#top').click();
+    fs.writeFileSync('test-results/covered-marker-top.png',await page.locator('canvas').screenshot());
+    assert.ok(markerPixels(await page.locator('canvas').screenshot(),'retract')<3,'upper path must mask the lower marker even when the sphere protrudes above its surface');
+    await page.getByRole('button',{name:'内壁',exact:true}).click();
+    assert.ok(markerPixels(await page.locator('canvas').screenshot(),'retract')>5,'removing the overlapping path reveals the full-size marker');
+    await page.locator('#iso').click();
+    const roundMarker=await page.locator('canvas').screenshot();
+    assert.ok(markerPixels(roundMarker,'retract')>5,'exposed marker remains visible from the side');
+    const roundPng=PNG.sync.read(roundMarker), markerBounds={minX:Infinity,minY:Infinity,maxX:0,maxY:0};
+    for(let y=0;y<roundPng.height;y++) for(let x=0;x<roundPng.width;x++) {
+      const offset=(y*roundPng.width+x)*4, pixels=roundPng.data;
+      if(pixels[offset]>130&&pixels[offset+2]>130&&pixels[offset+1]<110) {
+        markerBounds.minX=Math.min(markerBounds.minX,x); markerBounds.maxX=Math.max(markerBounds.maxX,x);
+        markerBounds.minY=Math.min(markerBounds.minY,y); markerBounds.maxY=Math.max(markerBounds.maxY,y);
+      }
+    }
+    assert.ok(markerBounds.maxY-markerBounds.minY>(markerBounds.maxX-markerBounds.minX)*.8,'an exposed marker must stay round instead of being flattened to its layer thickness');
+    fs.writeFileSync('test-results/round-marker-side.png',roundMarker);
+    await page.getByRole('button',{name:'内壁',exact:true}).click();
+    await page.locator('#top').click();
+    const partialCover=coveredMarker.replace('; WIDTH: 1','; WIDTH: 0.4').replace('G0 X0 Y0 Z0.4','G0 X0 Y0.2 Z0.4');
+    await send({type:'toolpath',index:0,data:packed(partialCover)});
+    const partialImage=await page.locator('canvas').screenshot();
+    const partialPixels=markerPixels(partialImage,'retract');
+    await page.getByRole('button',{name:'内壁',exact:true}).click();
+    const exposedPixels=markerPixels(await page.locator('canvas').screenshot(),'retract');
+    assert.ok(partialPixels>5&&partialPixels<exposedPixels*.85,`only the overlapping portion is masked: ${partialPixels} of ${exposedPixels} marker pixels`);
+    fs.writeFileSync('test-results/partial-marker-contact.png',partialImage);
+    await page.getByRole('button',{name:'内壁',exact:true}).click();
     await page.waitForTimeout(500);
     const idleDraws=await page.evaluate(()=>window.__webglDraws);
     await page.waitForTimeout(250);
     assert.equal(await page.evaluate(()=>window.__webglDraws),idleDraws,'an idle preview must not keep submitting WebGL draws');
+    const straightWipe='M83\n; CHANGE_LAYER\n; Z_HEIGHT: 0.2\n; FEATURE: Outer wall\nG0 X0 Y0 Z0.2\nG1 X10 E1\n; WIPE_START\nG1 X8 E0\nG1 X6 E0\nG1 X4 E0\n; WIPE_END';
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'bead',eventVisible:{retract:false,unretract:false,outerStart:false,currentPosition:false}}});
+    await send({type:'toolpath',index:0,data:packed(straightWipe)}); await page.locator('#top').click();
+    const thinWipe=await page.locator('canvas').screenshot(), thinPng=PNG.sync.read(thinWipe);
+    assert.equal(colorComponents(thinWipe,'wipe').length,1,'consecutive wipe moves form one continuous stroke');
+    let minY=thinPng.height,maxY=0;
+    for(let y=0;y<thinPng.height;y++) for(let x=0;x<thinPng.width;x++) {const p=(y*thinPng.width+x)*4,r=thinPng.data[p],g=thinPng.data[p+1],b=thinPng.data[p+2];if(r>180&&g>150&&g>r*.88&&b<110){minY=Math.min(minY,y);maxY=Math.max(maxY,y);}}
+    assert.ok(maxY-minY<8,'wipe stroke stays thin rather than forming a row of spheres');
+    await send({type:'displaySettings',settings:{color:'feature',renderMode:'bead'}});
     if(process.env.BENCHMARK_SEGMENTS) {
       const segments=Number(process.env.BENCHMARK_SEGMENTS), commands=['M83','; CHANGE_LAYER','; Z_HEIGHT: 0.2','; WIDTH: 0.45','; HEIGHT: 0.2','; FEATURE: Outer wall','G0 X0 Y0 Z0.2'];
       for(let i=1;i<=segments;i++) {
@@ -388,7 +484,7 @@ async function main() {
     await english.evaluate(message=>window.dispatchEvent(new MessageEvent('message',{data:message})),{type:'toolpath',index:0,data:packed(sliced)});
     assert.match(await english.locator('#status').innerText(),/3 layers · 17 toolpath segments/);
     assert.equal(await english.getByRole('button',{name:'Outer wall',exact:true}).count(),1);
-    assert.equal(await english.locator('#event-legend .legend-heading').innerText(),'Action markers');
+    assert.equal(await english.locator('#event-legend-heading').innerText(),'Action markers');
     assert.equal(await english.locator('#upper').inputValue(),'3','a new file starts with its full layer range');
     assert.equal(await english.locator('#lower').inputValue(),'1');
     assert.equal(await english.locator('#single').isChecked(),false);
@@ -438,16 +534,16 @@ async function main() {
     const noEvents='M83\n;TYPE:Infill\nG1 X10 Z.2 E1';
     await send({type:'displaySettings',settings:{color:'feature',renderMode:'line'}});
     await send({type:'toolpath',index:0,data:packed(partialEvents)});
-    assert.deepEqual(await eventKeys(),['retract','unretract']);
+    assert.deepEqual(await eventKeys(),['retract','unretract','currentPosition']);
     await page.locator('#upper').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input'));});
-    assert.deepEqual(await eventKeys(),['retract','unretract'],'marker list covers the whole plate, including other layers');
+    assert.deepEqual(await eventKeys(),['retract','unretract','currentPosition'],'marker list covers the whole plate, including other layers');
     await page.getByRole('button',{name:'リトラクト',exact:true}).click();
     await page.locator('#color').selectOption('speed');
-    assert.deepEqual(await eventKeys(),['retract','unretract']);
+    assert.deepEqual(await eventKeys(),['retract','unretract','currentPosition']);
     assert.equal(await page.getByRole('button',{name:'リトラクト',exact:true}).getAttribute('aria-pressed'),'false');
     await send({type:'toolpath',index:0,data:packed(noEvents)});
-    assert.deepEqual(await eventKeys(),[]);
-    assert.equal(await page.locator('#event-legend .legend-heading').count(),0,'no heading when the plate has no markers');
+    assert.deepEqual(await eventKeys(),['currentPosition']);
+    assert.equal(await page.locator('#event-legend-heading').count(),1,'current path position remains controllable without G-code events');
     await send({type:'toolpath',index:0,data:packed(partialEvents)});
     assert.equal(await page.getByRole('button',{name:'リトラクト',exact:true}).getAttribute('aria-pressed'),'false','marker preferences survive plates without that kind');
     const sparseFeatures='M83\n;LAYER:0\n;TYPE:Outer wall\nG1 X10 Z.2 E1\n;LAYER:1\n;TYPE:Custom\nG0 X0 Y2 Z.4\n;TYPE:Ironing\nG1 X10 E.01';
@@ -520,7 +616,46 @@ async function main() {
       await send({type:'toolpath',index:0,data});
       assert.match(await page.locator('#status').innerText(),new RegExp(`${data.layers.length} 層`));
       const expectedEvents=new Set(Buffer.from(data.eventKinds,'base64'));
-      assert.deepEqual(await eventKeys(),['retract','unretract','wipe','outerStart'].filter((_,kind)=>expectedEvents.has(kind)),`${filename}: marker legend matches whole-plate events`);
+      assert.deepEqual(await eventKeys(),['retract','unretract','wipe','outerStart'].filter((_,kind)=>expectedEvents.has(kind)).concat('currentPosition'),`${filename}: marker legend matches whole-plate events`);
+      if(filename==='sample_bambu_studio2.gcode.3mf') {
+        const parsed=parseGcode(archive.plates[0].gcode);
+        assert.equal(Array.from(parsed.eventKinds.keys()).filter(i=>parsed.eventKinds[i]===2&&parsed.eventLayers[i]===301).length,12);
+        const wipeSettings={color:'feature',renderMode:'bead',eventVisible:{retract:false,unretract:false,wipe:true,outerStart:false,currentPosition:false}};
+        await send({type:'displaySettings',settings:wipeSettings});
+        await page.locator('#single').check();
+        await page.locator('#upper-number').fill('302'); await page.locator('#upper-number').press('Tab');
+        await page.locator('#top').click();
+        const settleView=()=>page.evaluate(()=>new Promise(resolve=>{
+          let previous=window.__webglDraws,stable=0;
+          function tick(){const current=window.__webglDraws;stable=current===previous?stable+1:0;previous=current;if(stable>=4)resolve();else requestAnimationFrame(tick);}
+          requestAnimationFrame(tick);
+        }));
+        await settleView();
+        // Fit includes the entire tall plate and prime tower. Pan to the
+        // isolated ring before zooming so the actual 0.1 mm stroke is testable.
+        for(let attempt=0;attempt<2;attempt++) {
+          const png=PNG.sync.read(await page.locator('canvas').screenshot()), bounds={minX:png.width,minY:png.height,maxX:0,maxY:0};
+          for(let y=0;y<png.height;y++) for(let x=0;x<png.width;x++) {const p=(y*png.width+x)*4,r=png.data[p],g=png.data[p+1],b=png.data[p+2];if(r>100&&r>g*1.25&&g>b*1.15){bounds.minX=Math.min(bounds.minX,x);bounds.maxX=Math.max(bounds.maxX,x);bounds.minY=Math.min(bounds.minY,y);bounds.maxY=Math.max(bounds.maxY,y);}}
+          const box=await page.locator('canvas').boundingBox(), x=box.x+box.width/2,y=box.y+box.height/2;
+          await page.mouse.move(x,y);await page.mouse.down({button:'right'});
+          await page.mouse.move(x+png.width/2-(bounds.minX+bounds.maxX)/2,y+png.height/2-(bounds.minY+bounds.maxY)/2,{steps:5});
+          await page.mouse.up({button:'right'});await settleView();
+        }
+        await page.locator('canvas').hover();await page.mouse.wheel(0,-3200);await settleView();
+        await page.screenshot({path:'test-results/wipe-layer302.png'});
+        const onlyWipes={...wipeSettings,hiddenCategories:{feature:Array.from({length:16},(_,i)=>String(i)).filter(key=>key!=='9')}};
+        await send({type:'displaySettings',settings:onlyWipes});
+        assert.equal(colorComponents(await page.locator('canvas').screenshot(),'wipe').length,2,'302nd layer has two continuous wipe strokes from twelve moves');
+        await page.getByRole('button',{name:'ワイプ',exact:true}).click();
+        assert.equal(markerPixels(await page.locator('canvas').screenshot(),'wipe'),0,'wipe toggle hides cylinders and round joints together');
+        await page.getByRole('button',{name:'ワイプ',exact:true}).click();
+        await page.locator('#step').evaluate(el=>{el.value='0';el.dispatchEvent(new Event('input'));});
+        assert.equal(markerPixels(await page.locator('canvas').screenshot(),'wipe'),0,'wipe strokes wait for playback to reach them');
+        await page.locator('#step').evaluate(el=>{el.value=el.max;el.dispatchEvent(new Event('input'));});
+        await page.locator('#render-mode').selectOption('line');
+        assert.equal(colorComponents(await page.locator('canvas').screenshot(),'wipe').length,2,'wipe strokes also appear in line mode');
+        await send({type:'displaySettings',settings:{color:'feature',renderMode:'line'}});
+      }
       for(const mode of ['feature','speed','tool']) {
         await page.locator('#color').selectOption(mode);
         if(mode==='feature') {

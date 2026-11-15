@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-11-16
+
+- Make the action-marker and toolpath lists independently expandable, and save their open/closed states.
+- Add a saved Current path position toggle so the white cursor can be hidden with the other markers.
+- Show action markers across the selected layer range up to the current path position, preserving side-view inspection. Keep markers round and use a toolpath depth mask to hide only portions overlapped by foreground paths in other layers.
+- Correct marker masking in angled views and improve depth precision for thin layers, including when zooming.
+- Draw wipes as thin continuous yellow strokes along their actual motion paths instead of a sphere at every move.
+
 ## 0.4.0 — 2026-11-15
 
 - Open standalone text G-code files alongside sliced 3MF files.

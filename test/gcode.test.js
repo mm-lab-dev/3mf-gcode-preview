@@ -66,6 +66,20 @@ test('extrusion decrease during a tagged wipe is one wipe event, not a second re
   const d=parseGcode('M83\n; CHANGE_LAYER\n; Z_HEIGHT: .2\nG1 X1 Z.2 E1\nG1 E-.2\n; WIPE_START\nG1 X2 E-.1\n; WIPE_END\nG1 E.3');
   assert.deepEqual([...d.eventKinds],[EVENT.Retract,EVENT.Wipe,EVENT.Unretract]);
 });
+
+test('wipe events reference complete connected motion segments including tessellated arcs',()=>{
+  const d=parseGcode('M83\nG1 X10 Y0 Z.2 E1\n; WIPE_START\nG1 F3000\nG1 E-.1\nG1 X8\nG2 X6 Y0 I-1 J0\n; WIPE_END');
+  const wipes=Array.from(d.eventKinds.keys()).filter(i=>d.eventKinds[i]===EVENT.Wipe);
+  assert.ok(wipes.length>2,'the curved wipe retains its tessellated shape');
+  let previous=[10,0,Math.fround(.2)];
+  for(const event of wipes) {
+    const offset=(d.eventIndices[event]-1)*6;
+    assert.deepEqual(Array.from(d.positions.slice(offset,offset+3)),previous);
+    previous=Array.from(d.positions.slice(offset+3,offset+6));
+    assert.deepEqual(Array.from(d.eventPositions.slice(event*3,event*3+3)),previous);
+  }
+  assert.deepEqual(previous,[6,0,Math.fround(.2)]);
+});
 test('Z-hop does not create an inferred extrusion layer',()=>{
   const d=parseGcode('M83\nG1 X10 Z.2 E1\nG0 Z1\nG0 X20\nG0 Z.2\nG1 X30 E1\nG0 Z.4\nG1 X40 E1'); assert.deepEqual(d.layers.map(l=>l.z),[.2,.4]);
 });
