@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.1 — 2026-11-18
+
+- Shorten the README to focus on viewer controls, displayed information, and practical limitations.
+
+## 0.6.0 — 2026-11-18
+
+- Show path Z, layer pitch, deposited Z bounds, width, and bead height for the selected layers, plus dimensions and their specified, estimated, or default origins at the current playback position.
+- Honor slicer width and height comments, preserve thin ironing sections at the same path Z, and improve dimensional estimates for missing tags, adaptive layers, and volumetric extrusion.
+- Distinguish ironing display width and path spacing from the slicer's equivalent extrusion section. Estimate spacing from nearby paths, with the file setting as a fallback, and improve thin-pass shading without increasing physical thickness.
+- Preserve section dimensions across width, height, and tool changes, and keep bead height vertical on sloped paths.
+- Complete Japanese translations for input-size, binary G-code, and feature-name-limit errors, and verify the added dimension labels in English.
+
 ## 0.5.0 — 2026-11-16
 
 - Make the action-marker and toolpath lists independently expandable, and save their open/closed states.

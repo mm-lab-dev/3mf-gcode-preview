@@ -28,6 +28,8 @@ Another model shows how the two path displays handle a dense, detailed region:
 
 *Filament view shows the approximate width of each deposited path.*
 
+The side panel shows heights and path dimensions for the selected layers; the footer shows details at the current playback position. Estimated and default dimensions are labeled.
+
 <img src="resources/readme/toolpaths-lines.png" width="240" alt="The same close-up displayed as colored center lines">
 
 *The same area in Line view reveals the individual path routes.*
@@ -57,6 +59,8 @@ The interface follows the VS Code display language: Japanese for Japanese locale
 ## What to expect
 
 The viewer draws a preview from the file's model and G-code. Filament-style paths approximate deposited material; they are not a measurement of the finished print. Print times come from the slicer's estimates. Action markers are derived from G-code and may differ from printer behavior. The viewer does not determine seam positions or simulate firmware-specific commands.
+
+Ironing is shown schematically, and underlying fill may remain visible. The preview does not simulate how material spreads or deforms.
 
 Large or unsupported files may show an error. The extension does not send a job to a printer or start a print.
 

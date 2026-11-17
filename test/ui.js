@@ -43,7 +43,7 @@ function colorComponents(buffer,kind='orange') {
   return sizes.sort((a,b)=>b-a);
 }
 function trackIsGreen(buffer,fractionFromTop) { const png=PNG.sync.read(buffer), offset=(Math.floor(png.height*fractionFromTop)*png.width+Math.floor(png.width/2))*4; return png.data[offset+1]>png.data[offset]*1.3&&png.data[offset+1]>png.data[offset+2]*1.1; }
-function packed(text) { const data=parseGcode(text); for(const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers']) data[key]=Buffer.from(data[key].buffer).toString('base64'); return data; }
+function packed(text) { const data=parseGcode(text); for(const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','displayWidths','heights','dimensionSources','eventPositions','eventKinds','eventIndices','eventLayers']) data[key]=Buffer.from(data[key].buffer).toString('base64'); return data; }
 async function main() {
   const server=http.createServer((req,res)=>{
     if(req.url==='/'||req.url==='/en') { res.setHeader('Content-Type','text/html'); res.end(getHtml({scriptUri:'/webview.js',styleUri:'/webview.css',cspSource:"'self'",nonce:'test-nonce',language:req.url==='/en'?'en-US':'ja-JP'})); }

@@ -26,6 +26,9 @@ test('bundled worker loads standalone G-code, reloads it, and rejects binary inp
   assert.deepEqual([...first.data.types],[1,3,6]); assert.deepEqual([...first.data.tools],[0,0,1]);
   assert.equal(first.data.speeds[0],20);
   assert.ok(first.data.sourceTypes instanceof Uint32Array);
+  assert.ok(first.data.dimensionSources instanceof Uint8Array);
+  assert.ok(first.data.displayWidths instanceof Float32Array);
+  assert.equal(first.data.dimensionSources.length,first.data.segmentCount);
   assert.equal(first.data.sourceFeatures[first.data.sourceTypes[0]].name,'WALL-OUTER');
   const repeated=await request({type:'plate',index:0,id:2});
   assert.deepEqual(repeated.data.positions,first.data.positions);

@@ -1,5 +1,23 @@
 # Verification record
 
+## 0.6.1 — 2026-11-18
+
+- Documentation/version update: README simplified and package/lockfile versions set to 0.6.1. Runtime bundles are byte-identical to the verified 0.6.0 VSIX; runtime tests were not repeated.
+- Build and package: passed. VSIX manifest, package and lockfile versions agree. Bundled assets and README/changelog content verified; local samples, source and tests excluded.
+- VSIX: `3mf-gcode-preview-0.6.1.vsix`, 22 files, 3,421,786 bytes. SHA-256: `37b4bdb43415ee0d8d7a2e0e71ba951a876053f5463e78fd4c5872e507323e08`. Inventory: `test-results/release-0.6.1.json`.
+- Marketplace publication has not been performed. The accepted display limitations and Remote-SSH verification status recorded under 0.6.0 still apply.
+
+## 0.6.0 — 2026-11-18
+
+- Node.js tests: 51 passed with no failures or skips. Coverage includes dimensional tags and estimates, first/adaptive layer pitches, thin ironing, measured spacing, section boundaries, sloped bead height, per-segment lighting reset, Japanese/English translation key and placeholder parity, and localized standalone G-code errors.
+- Full Playwright UI suite: passed, including feature/speed/tool filters, playback, layer ranges, saved preferences, Japanese/English views, narrow layouts, model-only files, and 15 local cross-slicer samples. Marker occlusion checks reported zero leaks in top, angled, and zoomed views.
+- Dimensions UI: passed for Japanese and English, including slicer-equivalent dimensions, display width and ironing spacing, default/estimated origins, empty playback selection, and localized binary G-code errors. Visually inspected `test-results/dimensions-comparison-en.png`; ironing top/angled fixtures and the real sample layer 10 were reviewed during implementation.
+- VS Code Extension Host 1.140.0 / Windows: passed activation, command, Custom Editor, Webview handshake, virtual filesystem reads, and zero input writes, using the existing repository-local VS Code installation.
+- VSIX: `3mf-gcode-preview-0.6.0.vsix`, 22 files, 3,421,738 bytes. Version 0.6.0 agrees across package.json, lockfile and VSIX manifest. Bundled JS/CSS, Japanese/English manifest strings and images match the source artifacts; README/changelog content matches with standard vsce link rewriting. Samples, source and test files are excluded. Detailed inventory: `test-results/release-0.6.0.json`.
+- VSIX SHA-256: `669b5a93e412e3c50923ee8568bc14e8050ec11bdc6b50a039095e1f973e83f1`.
+- Accepted display limitations: ironing width is capped at neighboring path spacing, including central paths; underlying solid fill can show where its surface overlaps ironing at the same path Z; closed-loop first/last joins remain separate end sections. The sample's solid fill and ironing both run at Z 1.040 mm; the temporary Z 1.440 mm move is a travel hop.
+- Real Remote-SSH use remains unverified. Marketplace publication, Git commits, tags and pushes have not been performed as part of this preparation.
+
 ## 0.5.0 — 2026-11-16
 
 - Node.js tests: 39 passed, including the saved current-position marker preference, independent legend expansion preferences, defaults for older settings, and connected wipe motion geometry including tessellated arcs.

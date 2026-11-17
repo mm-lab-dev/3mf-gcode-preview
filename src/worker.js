@@ -17,7 +17,7 @@ parentPort.on('message', message => {
       const plate = archive?.plates[message.index];
       if (!plate) throw new Error('Unknown plate.');
       const data = parseGcode(plate.gcode);
-      parentPort.postMessage({ type: 'toolpath', id: message.id, index: message.index, data }, ['positions','types','sourceTypes','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers'].map(k => data[k].buffer));
+      parentPort.postMessage({ type: 'toolpath', id: message.id, index: message.index, data }, ['positions','types','sourceTypes','speeds','tools','lines','widths','displayWidths','heights','dimensionSources','eventPositions','eventKinds','eventIndices','eventLayers'].map(k => data[k].buffer));
     }
   } catch (error) { parentPort.postMessage({ type: 'error', id: message.id, message: error.message }); }
 });

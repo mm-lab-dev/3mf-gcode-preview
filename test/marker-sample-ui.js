@@ -18,7 +18,7 @@ async function main() {
     const original=data[key]; data[key]=new original.constructor(keep.flatMap(i=>Array.from(original.slice(i*stride,(i+1)*stride))));
   }
   data.eventCount=keep.length;
-  for(const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers']) data[key]=Buffer.from(data[key].buffer).toString('base64');
+  for(const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','displayWidths','heights','dimensionSources','eventPositions','eventKinds','eventIndices','eventLayers']) data[key]=Buffer.from(data[key].buffer).toString('base64');
   const server=http.createServer((req,res)=>{
     if(req.url==='/') {res.setHeader('Content-Type','text/html');res.end(getHtml({scriptUri:'/webview.js',styleUri:'/webview.css',cspSource:"'self'",nonce:'test',language:'ja'}));}
     else if(['/webview.js','/webview.css'].includes(req.url)) {res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':'text/css');res.end(fs.readFileSync(req.url==='/webview.js'&&process.env.WEBVIEW_JS_PATH?process.env.WEBVIEW_JS_PATH:path.join(__dirname,'../dist',req.url)));}

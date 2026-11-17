@@ -39,7 +39,7 @@ function activate(context) {
               else post({ type: 'model', bytes: Buffer.from(bytes).toString('base64') });
             } else if (message.type === 'toolpath' && message.id === selectionId) {
               // VS Code messages are JSON: explicitly encode packed arrays.
-              for (const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','heights','eventPositions','eventKinds','eventIndices','eventLayers']) {
+              for (const key of ['positions','types','sourceTypes','speeds','tools','lines','widths','displayWidths','heights','dimensionSources','eventPositions','eventKinds','eventIndices','eventLayers']) {
                 const value = message.data[key]; message.data[key] = Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('base64');
               }
               post(message);

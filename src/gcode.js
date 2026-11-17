@@ -1,5 +1,6 @@
 // A display interpreter, never a slicer or printer controller. Coordinates are mm.
 // Keep existing IDs stable: 9 is Travel throughout rendering and saved filters.
+const {measureIroningSpacing}=require('./ironing');
 const FEATURES = ['Other', 'Outer wall', 'Inner wall', 'Infill', 'Solid infill', 'Top surface', 'Support', 'Skirt / brim', 'Bridge', 'Travel', 'Overhang wall', 'Support interface', 'Floating vertical shell', 'Ironing', 'Prime tower', 'Gap infill'];
 const FEATURE_ALIASES = [
   ['other','custom'],
@@ -47,17 +48,26 @@ function arcPoints(start, end, params, clockwise) {
 }
 function parseGcode(text, { maxSegments = 2000000 } = {}) {
   const warnings = new Set(), layers = [], positions = [], types = [], speeds = [], tools = [], lines = [], widths = [], heights = [];
-  const eventPositions=[], eventKinds=[], eventIndices=[], eventLayers=[];
+  const eventPositions=[], eventKinds=[], eventIndices=[], eventLayers=[], dimensionSources=[], displayWidths=[];
   const sourceTypes=[], sourceFeatures=[{name:'',type:0,extrusionSegments:0,travelSegments:0}], sourceLookup=new Map([['',0]]);
   let sourceFeature=0;
-  let pos=[0,0,0], offset=[0,0,0], e=0, debt=0, absolute=true, eAbsolute=true, unit=1, speed=0, tool=0, feature=0, layer=null, tagged=false, pending=false, height=null, plane=17, arcAbsolute=false, beadWidth=0.45, beadHeight=null, nominalHeight=0.2;
+  let pos=[0,0,0], offset=[0,0,0], e=0, debt=0, absolute=true, eAbsolute=true, unit=1, speed=0, tool=0, feature=0, layer=null, tagged=false, pending=false, height=null, plane=17, arcAbsolute=false, beadWidth=null, beadHeight=null, nominalHeight=0.2;
+  // Only infer volume when the file supplies a diameter, or enables M200.
+  // Never assume a material diameter from a nozzle diameter or printer name.
+  const diameterTag=text.match(/^;\s*filament_diameter\s*[:=]\s*([^\r\n]+)/im);
+  const diameters=diameterTag?diameterTag[1].split(/[,;]/).map(Number):[];
+  const spacingTag=text.match(/^;\s*ironing_spacing\s*[:=]\s*([\d.]+)/im);
+  const configuredIroningSpacing=spacingTag?Number(spacingTag[1]):0;
+  const ironingSpacing=Number.isFinite(configuredIroningSpacing)&&configuredIroningSpacing>0&&configuredIroningSpacing<=10?configuredIroningSpacing:null;
+  const volumeTools=new Set();
+  let inferenceEnabled=true, motionWidth=0.45, motionHeight=0.2, motionSource=0;
   let wiping=false, modelTime=null, totalTime=null;
   const extruders=new Map();
   const markerPatterns=[/^CHANGE_LAYER\b/i,/^LAYER_CHANGE\b/i,/^LAYER\s*:\s*-?\d+/i,/^layer num\/total_layer_count/i];
   // Use one marker family; Bambu files may emit both CHANGE_LAYER and layer count comments.
   const layerMarker=markerPatterns.find(pattern=>new RegExp(`^\\s*;\\s*${pattern.source.slice(1)}`,'im').test(text));
   const hasTags=Boolean(layerMarker);
-  function newLayer(z) { const previous=layers.at(-1); if(previous&&z-previous.z>0.02&&z-previous.z<1.2) nominalHeight=z-previous.z; layer={ number:layers.length+1, z, start:types.length, end:types.length, extrusion:0, travel:0 }; layers.push(layer); }
+  function newLayer(z) { layer={ number:layers.length+1, z, start:types.length, end:types.length, extrusion:0, travel:0 }; layers.push(layer); }
   function recordEvent(kind,at,index=types.length) {
     if(!layer) return;
     if(eventKinds.length>=200000) { warnings.add('Event markers limited to the first 200,000 events.'); return; }
@@ -71,7 +81,10 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
       const joined=previousOuter&&Math.abs(positions[last-3]-a[0])<1e-4&&Math.abs(positions[last-2]-a[1])<1e-4&&Math.abs(positions[last-1]-a[2])<1e-4;
       if(!joined) recordEvent(EVENT.OuterWallStart,a,types.length+1);
     }
-    positions.push(...a,...b); types.push(extruding?feature:9); speeds.push(speed/60); tools.push(tool); lines.push(lineNo); widths.push(extruding?beadWidth:0); heights.push(extruding?(beadHeight??nominalHeight):0);
+    positions.push(...a,...b); types.push(extruding?feature:9); speeds.push(speed/60); tools.push(tool); lines.push(lineNo); widths.push(extruding?motionWidth:0); heights.push(extruding?motionHeight:0); dimensionSources.push(extruding?motionSource:0);
+    // In the path preview, each ironing pass occupies at most one line pitch.
+    // Keep the slicer's virtual extrusion section separately in widths/heights.
+    displayWidths.push(extruding?(feature===13&&ironingSpacing?Math.min(motionWidth,ironingSpacing):motionWidth):0);
     sourceTypes.push(sourceFeature);
     sourceFeatures[sourceFeature][extruding?'extrusionSegments':'travelSegments']++;
     layer.end=types.length; layer[extruding?'extrusion':'travel']++;
@@ -106,8 +119,8 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
       }
       sourceFeature=sourceLookup.get(name);
     }
-    const wm=comment.match(/^(?:WIDTH|LINE_WIDTH)\s*:\s*([\d.]+)/i); if(wm) { const value=Number(wm[1]); if(Number.isFinite(value)&&value>=0.02&&value<=3) beadWidth=value; }
-    const bhm=comment.match(/^HEIGHT\s*:\s*([\d.]+)/i); if(bhm) { const value=Number(bhm[1]); if(Number.isFinite(value)&&value>=0.02&&value<=1.2) beadHeight=value; }
+    const wm=comment.match(/^(?:WIDTH|LINE_WIDTH)\s*:\s*([\d.]+)/i); if(wm) { const value=Number(wm[1]); if(Number.isFinite(value)&&value>0&&value<=10) beadWidth=value; }
+    const bhm=comment.match(/^(?:HEIGHT|LAYER_HEIGHT)\s*:\s*([\d.]+)/i); if(bhm) { const value=Number(bhm[1]); if(Number.isFinite(value)&&value>0&&value<=10) beadHeight=value; }
     const code=(semicolon>=0?raw.slice(0,semicolon):raw).replace(/\([^)]*\)/g,'').replace(/^\s*N\d+\s*/i,'').trim().toUpperCase();
     const cm=code.match(/^([GMT])\s*(\d+(?:\.\d+)?)/); if (!cm) continue;
     const command=cm[1]+Number(cm[2]); const p={};
@@ -115,16 +128,25 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
     if (command==='G90') { absolute=true; continue; } if (command==='G91') { absolute=false; continue; }
     if (command==='M82') { eAbsolute=true; continue; } if (command==='M83') { eAbsolute=false; continue; }
     if (command==='G20') { unit=25.4; continue; } if (command==='G21') { unit=1; continue; }
+    if (command==='M200') {
+      const selected=p.T??tool;
+      if(p.D>0) { volumeTools.add(selected); diameters[selected]=p.D; }
+      if(p.S===1&&diameters[selected]>0) volumeTools.add(selected);
+      if(p.D===0||p.S===0) volumeTools.delete(selected);
+      continue;
+    }
+    if(command==='M221') inferenceEnabled=false;
     if (command==='G90.1') { arcAbsolute=true; continue; } if (command==='G91.1') { arcAbsolute=false; continue; }
     if (['G17','G18','G19'].includes(command)) { plane=Number(cm[2]); continue; }
-    if (command==='G92') { ['X','Y','Z'].forEach((axis,i)=>{ if (axis in p) offset[i]=pos[i]-p[axis]*unit; }); if ('E' in p) e=p.E*unit; continue; }
+    if (command==='G92') { ['X','Y','Z'].forEach((axis,i)=>{ if (axis in p) offset[i]=pos[i]-p[axis]*unit; }); if ('E' in p) e=p.E*(volumeTools.has(tool)?unit**3:unit); continue; }
     if (cm[1]==='T') { if (Number(cm[2]) < 256) { extruders.set(tool,{e,debt}); tool=Number(cm[2]); ({e,debt}=extruders.get(tool)??{e:0,debt:0}); } else warnings.add('Special tool selection commands are not simulated.'); continue; }
     if(command==='G10'||command==='G11') { recordEvent(command==='G10'?EVENT.Retract:EVENT.Unretract,pos); continue; }
     if (['G28','G29','G53','G54','G55','G56','G57','G58','G59','G10','G11','M622','M623','M221','M200','M600'].includes(command)) warnings.add(`${command}: firmware behavior is not simulated; preview may differ from printer execution.`);
     if (!['G0','G1','G2','G3'].includes(command)) { if(cm[1]==='G' && !['G4','G28','G29','G53','G54','G55','G56','G57','G58','G59','G10','G11'].includes(command)) warnings.add(`${command}: unsupported G command omitted.`); continue; }
     if ('F' in p) speed=p.F*unit;
     const next=pos.map((v,i)=>{ const axis='XYZ'[i]; return axis in p ? (absolute ? p[axis]*unit+offset[i] : v+p[axis]*unit):v; });
-    const nextE='E' in p ? (eAbsolute?p.E*unit:e+p.E*unit):e, delta=nextE-e, debtBefore=debt, extruding=delta-debt>1e-7;
+    const eUnit=volumeTools.has(tool)?unit**3:unit;
+    const nextE='E' in p ? (eAbsolute?p.E*eUnit:e+p.E*eUnit):e, delta=nextE-e, debtBefore=debt, extruding=delta-debt>1e-7;
     debt=Math.max(0,debt-delta);
     const start=pos; pos=next; e=nextE;
     // Exclude startup purge when layer tags exist, and terminal machine moves.
@@ -134,7 +156,12 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
     else if (!hasTags && extruding && Math.abs(next[2]-layer.z)>0.001) newLayer(next[2]);
     if(delta< -1e-7&&!wiping) recordEvent(EVENT.Retract,start);
     else if(delta>1e-7&&debtBefore>1e-7) recordEvent(EVENT.Unretract,start);
-    if (extruding && layer.extrusion===0 && height===null) layer.z=next[2];
+    if (extruding && layer.extrusion===0) {
+      if(height===null) layer.z=next[2];
+      const previous=layers.at(-2), pitch=layer.z-(previous?.z??0);
+      layer.pitch=pitch>0?pitch:null;
+      if(pitch>0&&pitch<=10) nominalHeight=pitch;
+    }
     let points=[start,next];
     if (command==='G2'||command==='G3') {
       if (plane!==17) { warnings.add('Non-XY arc omitted (G18/G19).'); continue; }
@@ -143,6 +170,25 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
       points=arcPoints(start,next,ap,command==='G2');
       if (!points) { warnings.add(`Invalid arc omitted near motion ${lineNo}.`); continue; }
     }
+    if(extruding) {
+      motionHeight=beadHeight??nominalHeight;
+      motionSource=beadHeight!==null?4:(layer.pitch>0&&layer.pitch<=10?8:0);
+      motionWidth=beadWidth??0.45;
+      if(beadWidth!==null) motionSource|=1;
+      else if(inferenceEnabled) {
+        let length=0;
+        for(let i=1;i<points.length;i++) length+=Math.hypot(...points[i].map((v,k)=>v-points[i-1][k]));
+        const diameter=diameters[tool], volume=volumeTools.has(tool)?delta:diameter>0?delta*Math.PI*diameter**2/4:0;
+        const area=length>0?volume/length:0;
+        // An estimate: round for unsupported bridges, stadium section otherwise.
+        const round=feature===8&&beadHeight===null;
+        const inferred=round?Math.sqrt(4*area/Math.PI):area>=Math.PI*motionHeight**2/4?area/motionHeight+motionHeight*(1-Math.PI/4):4*area/(Math.PI*motionHeight);
+        if(debtBefore===0&&inferred>0&&inferred<=10&&area>0) {
+          motionWidth=inferred; motionSource|=2;
+          if(round) { motionHeight=inferred; motionSource&=~8; }
+        }
+      }
+    }
     for (let i=1;i<points.length;i++) {
       const before=types.length; append(points[i-1],points[i],extruding,lineNo);
       if(wiping&&types.length>before) recordEvent(EVENT.Wipe,points[i]);
@@ -150,6 +196,27 @@ function parseGcode(text, { maxSegments = 2000000 } = {}) {
   }
   if (!hasTags) warnings.add('No slicer layer markers: layers inferred from extrusion height; spiral and nonplanar paths may be grouped inaccurately.');
   if (!types.length || !layers.some(l=>l.extrusion)) throw new Error('No printable extrusion paths found in this plate.');
-  return { layers, positions:Float32Array.from(positions), types:Uint8Array.from(types), sourceTypes:Uint32Array.from(sourceTypes), sourceFeatures, speeds:Float32Array.from(speeds), tools:Uint16Array.from(tools), lines:Uint32Array.from(lines), widths:Float32Array.from(widths), heights:Float32Array.from(heights), eventPositions:Float32Array.from(eventPositions), eventKinds:Uint8Array.from(eventKinds), eventIndices:Uint32Array.from(eventIndices), eventLayers:Uint32Array.from(eventLayers), eventCount:eventKinds.length, modelTime, totalTime, features:FEATURES, warnings:[...warnings], segmentCount:types.length };
+  // Cache dimensional ranges once; slider updates must not scan a whole plate.
+  for(const l of layers) {
+    const measuredSpacing=measureIroningSpacing(l,positions,types,tools);
+    const layerIroningSpacing=measuredSpacing??ironingSpacing;
+    l.ironingSpacingSource=measuredSpacing!==null?'coordinates':'settings';
+    l.pitch=l.z-(layers[l.number-2]?.z??0); if(l.pitch<=0) l.pitch=null;
+    l.widthRange=null; l.displayWidthRange=null; l.heightRange=null; l.pathZRange=null; l.bottomZ=null; l.topZ=null; l.ironingSpacing=null;
+    l.estimatedWidth=false; l.estimatedHeight=false;
+    for(let i=l.start;i<l.end;i++) if(types[i]!==9) {
+      if(types[i]===13&&layerIroningSpacing) displayWidths[i]=Math.min(widths[i],layerIroningSpacing);
+      for(const [key,value] of [['widthRange',widths[i]],['displayWidthRange',displayWidths[i]],['heightRange',heights[i]]]) {
+        if(!l[key]) l[key]=[value,value]; else { l[key][0]=Math.min(l[key][0],value); l[key][1]=Math.max(l[key][1],value); }
+      }
+      const bottom=Math.min(positions[i*6+2],positions[i*6+5])-heights[i], top=Math.max(positions[i*6+2],positions[i*6+5]);
+      const minZ=Math.min(positions[i*6+2],positions[i*6+5]);
+      if(!l.pathZRange) l.pathZRange=[minZ,top]; else { l.pathZRange[0]=Math.min(l.pathZRange[0],minZ); l.pathZRange[1]=Math.max(l.pathZRange[1],top); }
+      l.bottomZ=l.bottomZ===null?bottom:Math.min(l.bottomZ,bottom); l.topZ=l.topZ===null?top:Math.max(l.topZ,top);
+      l.estimatedWidth||=!(dimensionSources[i]&1); l.estimatedHeight||=!(dimensionSources[i]&4);
+      if(types[i]===13) l.ironingSpacing=layerIroningSpacing;
+    }
+  }
+  return { layers, positions:Float32Array.from(positions), types:Uint8Array.from(types), sourceTypes:Uint32Array.from(sourceTypes), sourceFeatures, speeds:Float32Array.from(speeds), tools:Uint16Array.from(tools), lines:Uint32Array.from(lines), widths:Float32Array.from(widths), displayWidths:Float32Array.from(displayWidths), heights:Float32Array.from(heights), dimensionSources:Uint8Array.from(dimensionSources), eventPositions:Float32Array.from(eventPositions), eventKinds:Uint8Array.from(eventKinds), eventIndices:Uint32Array.from(eventIndices), eventLayers:Uint32Array.from(eventLayers), eventCount:eventKinds.length, modelTime, totalTime, features:FEATURES, warnings:[...warnings], segmentCount:types.length };
 }
 module.exports = { parseGcode, arcPoints, FEATURES, FEATURE_ALIASES, EVENT };

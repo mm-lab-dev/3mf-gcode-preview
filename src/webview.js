@@ -7,6 +7,7 @@ import { createBeadMesh, createBeadCaps, connected, writeBead, writeBeadCap, upl
 import { translator, localizeDiagnostic } from './i18n';
 import { normalizeDisplaySettings } from './display-settings';
 import { createMarkerOcclusion } from './marker-occlusion';
+import { selectionDimensions } from './dimensions';
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const locale=document.documentElement.lang==='ja'?'ja':'en', t=translator(locale), numberLocale=locale==='ja'?'ja-JP':'en-US';
@@ -178,6 +179,7 @@ function recolor() {
       for(let i=1;i<indices.length;i++) if(indices[i]!==indices[i-1]+1||!connected(data,indices[i-1],indices[i])) runStarts.push(i);
       const caps=createBeadCaps(runStarts.length*2);
       object.add(caps); Object.assign(object.userData,{runStarts,caps});
+
     } else {
       const positions=new Float32Array(indices.length*6), colors=new Float32Array(indices.length*6);
       indices.forEach((index,j)=>{ positions.set(data.positions.subarray(index*6,index*6+6),j*6); const c=colorFor(index); colors.set([c.r,c.g,c.b,c.r,c.g,c.b],j*6); });
@@ -299,7 +301,11 @@ function update(changed, resetStep=false) {
   const low=data.layers[displayedLower-1], high=data.layers[upper-1], count=high.end-low.start;
   $('step').max=String(count); if(resetStep) $('step').value=String(count);
   const step=Math.min(Number($('step').value),count), end=low.start+step;
-  $('layer-label').textContent=`${displayedLower} – ${upper} / ${data.layers.length}\nZ ${low.z.toFixed(3)} – ${high.z.toFixed(3)} mm`;
+  const dimensions=selectionDimensions(data.layers,displayedLower-1,upper-1);
+  const mm=range=>range?`${range[0].toFixed(3)}${Math.abs(range[1]-range[0])>0.0000001?` – ${range[1].toFixed(3)}`:''} mm`:'—';
+  $('layer-label').textContent=`${displayedLower} – ${upper} / ${data.layers.length}\n${t('pathZ')}: ${mm(dimensions.z)}\n${t('layerPitch')}: ${mm(dimensions.pitch)}\n${t('depositedZ')}: ${mm(dimensions.bounds)}\n${t('beadWidth')}: ${mm(dimensions.width)}${dimensions.estimatedWidth?` (${t('estimated')})`:''}\n${t('beadHeight')}: ${mm(dimensions.height)}${dimensions.estimatedHeight?` (${t('estimated')})`:''}`;
+  $('layer-label').title=t('selectedDimensions');
+  if(dimensions.ironingSpacing) $('layer-label').textContent+=`\n${t('displayWidth')}: ${mm(dimensions.displayWidth)}\n${t('ironingSpacing')}: ${mm(dimensions.ironingSpacing)}`;
   $('step-label').textContent=`${step} / ${count}`;
   let visibleSegments=0;
   for(const object of pathObjects) {
@@ -349,7 +355,8 @@ function update(changed, resetStep=false) {
       const eventLayer=data.layers[layer];
       const segment=Math.max(eventLayer.start,Math.min(data.eventIndices[event]-1,eventLayer.end-1));
       const height=markerLayerHeight(layer,segment);
-      object.geometry.attributes.markerLayerBounds.setXY(drawn,eventLayer.z-height,eventLayer.z);
+      const eventZ=data.eventPositions[offset+2];
+      object.geometry.attributes.markerLayerBounds.setXY(drawn,eventZ-height,eventZ);
       if(kind==='wipe') {
         // Wipe events are recorded immediately after each retained motion, so
         // its actual start/end (including arc tessellation) are already packed.
@@ -365,7 +372,7 @@ function update(changed, resetStep=false) {
           eventMatrix.makeScale(wipeRadius,wipeRadius,wipeRadius);
           eventMatrix.setPosition(endpoint?wipeEnd:wipeStart);
           joints.setMatrixAt(joint,eventMatrix);
-          joints.geometry.attributes.markerLayerBounds.setXY(joint,eventLayer.z-height,eventLayer.z);
+          joints.geometry.attributes.markerLayerBounds.setXY(joint,eventZ-height,eventZ);
         }
         eventMatrix.compose(wipeStart.add(wipeEnd).multiplyScalar(0.5),wipeRotation,wipeScale);
       } else eventMatrix.makeTranslation(data.eventPositions[offset],data.eventPositions[offset+1],data.eventPositions[offset+2]);
@@ -380,29 +387,44 @@ function update(changed, resetStep=false) {
   const markerScale=$('render-mode').value==='bead'?0.35:1;
   marker.scale.setScalar(markerScale);
   const bounds=marker.geometry.attributes.markerLayerBounds;
-  for(let i=0;i<bounds.count;i++) bounds.setXY(i,current.z-layerHeight,current.z);
+  const markerZ=data.positions[index*6+5];
+  for(let i=0;i<bounds.count;i++) bounds.setXY(i,markerZ-layerHeight,markerZ);
   bounds.needsUpdate=true;
   marker.visible=eventVisible.currentPosition&&step>0&&categoryVisible(categoryFor(end-1));
   if(step>0) marker.position.fromArray(data.positions,(end-1)*6+3);
   $('details').textContent=t('visibleSegments',formatNumber(visibleSegments),current.number,formatNumber(current.extrusion),formatNumber(current.travel),featureName(data.types[index]),(data.speeds[index]??0).toFixed(1),data.tools[index]??0,data.lines[index]??'—');
   const source=data.sourceFeatures?.[data.sourceTypes?.[index]];
   if(source&&data.types[index]!==9) $('details').textContent+=` | ${t('sourceFeature')}: ${source.name||t('noFeatureTag')}`;
+  if(step>0) {
+    const offset=index*6, source=data.dimensionSources[index];
+    const dimension=(key,value,origin)=>`${t(key)}: ${value.toFixed(3)} mm (${t(origin)})`;
+    $('details').textContent+=` | ${t('pathZ')}: ${mm([Math.min(data.positions[offset+2],data.positions[offset+5]),Math.max(data.positions[offset+2],data.positions[offset+5])])} | ${t('layerPitch')}: ${mm(current.pitch===null?null:[current.pitch,current.pitch])}`;
+    const ironing=data.types[index]===13;
+    const widthOrigin=source&1?(ironing?'slicerEquivalent':'specified'):source&2?'fromVolume':'defaultValue';
+    const heightOrigin=source&4?(ironing?'slicerEquivalent':'specified'):source&8?'fromPitch':source&2&&data.types[index]===8?'fromVolume':'defaultValue';
+    if(data.types[index]!==9) $('details').textContent+=` | ${dimension('beadWidth',data.widths[index],widthOrigin)} | ${dimension('beadHeight',data.heights[index],heightOrigin)}`;
+    if(ironing&&current.ironingSpacing) $('details').textContent+=` | ${t('displayWidth')}: ${data.displayWidths[index].toFixed(3)} mm | ${t('ironingSpacing')}: ${current.ironingSpacing.toFixed(3)} mm`;
+  } else $('details').textContent+=` | ${t('noCurrentPath')}`;
   rememberRange(); requestRender();
 }
 function markerLayerHeight(layer,index) {
-  const z=data.layers[layer].z, height=data.heights[index]||0.2;
-  const spacing=layer>0?z-data.layers[layer-1].z:z;
-  return Math.max(0.001,Math.min(height,spacing>0?spacing:height));
+  return data.heights[index]||data.layers[layer].heightRange?.[1]||data.layers[layer].pitch||0.2;
 }
 function lowerBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(a[mid]<value) lo=mid+1; else hi=mid; } return lo; }
 function upperBound(a,value) { let lo=0,hi=a.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(a[mid]<=value) lo=mid+1; else hi=mid; } return lo; }
 function layerForSegment(index) { let lo=0,hi=data.layers.length; while(lo<hi) { const mid=(lo+hi)>>>1; if(data.layers[mid].end<=index) lo=mid+1; else hi=mid; } return data.layers[Math.min(lo,data.layers.length-1)]; }
 function showToolpath(message) {
   const saved=vscode.getState(); clear(); data=message.data; selectedPlate=message.index; $('plate').value=String(selectedPlate);
-  for(const [key,Type] of Object.entries({positions:Float32Array,types:Uint8Array,sourceTypes:Uint32Array,speeds:Float32Array,tools:Uint16Array,lines:Uint32Array,widths:Float32Array,heights:Float32Array,eventPositions:Float32Array,eventKinds:Uint8Array,eventIndices:Uint32Array,eventLayers:Uint32Array})) data[key]=decode(data[key],Type);
+  for(const [key,Type] of Object.entries({positions:Float32Array,types:Uint8Array,sourceTypes:Uint32Array,speeds:Float32Array,tools:Uint16Array,lines:Uint32Array,widths:Float32Array,displayWidths:Float32Array,heights:Float32Array,dimensionSources:Uint8Array,eventPositions:Float32Array,eventKinds:Uint8Array,eventIndices:Uint32Array,eventLayers:Uint32Array})) data[key]=decode(data[key],Type);
   $('time-summary').hidden=false; $('model-time').textContent=data.modelTime||'—'; $('total-time').textContent=data.totalTime||'—';
   fitBox=new THREE.Box3();
-  for(let i=0;i<data.segmentCount;i++) if(data.types[i]!==9) { fitBox.expandByPoint(new THREE.Vector3().fromArray(data.positions,i*6)); fitBox.expandByPoint(new THREE.Vector3().fromArray(data.positions,i*6+3)); }
+  for(let i=0;i<data.segmentCount;i++) if(data.types[i]!==9) {
+    for(const offset of [i*6,i*6+3]) {
+      const x=data.positions[offset], y=data.positions[offset+1], z=data.positions[offset+2], radius=data.widths[i]/2;
+      fitBox.expandByPoint(new THREE.Vector3(x-radius,y-radius,z-data.heights[i]));
+      fitBox.expandByPoint(new THREE.Vector3(x+radius,y+radius,z));
+    }
+  }
   for(const id of ['upper','lower','upper-number','lower-number']) { $(id).max=String(data.layers.length); $(id).disabled=false; }
   $('upper').value=String(Math.min(saved?.upper??data.layers.length,data.layers.length)); $('lower').value=String(Math.min(saved?.lower??1,data.layers.length));
   $('single').checked=saved?.single??false;
