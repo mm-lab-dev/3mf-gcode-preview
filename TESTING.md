@@ -1,5 +1,11 @@
 # Verification record
 
+## 0.6.3 — 2026-11-26
+
+- Rebased the local preview changes onto `origin/main` at `43951d7`, retaining both upstream dependency updates. `npm ci` completed; package and lockfile versions are 0.6.3.
+- Build, all 59 Node.js tests and the full Playwright UI suite passed, including 15 local samples and zero marker leaks in all four tested views. Diff whitespace checks passed.
+- Built `test-results/3mf-gcode-preview-0.6.3.vsix` and verified package/manifest versions, bundled code and translations, and exclusion of samples/test files. Package metadata and SHA-256 are recorded in `test-results/0.6.3-package-check.json` and [PUBLISHING.md](PUBLISHING.md).
+
 ## Unreleased — 2026-11-25 (VIEW-006)
 
 - Supersedes the round joins of VIEW-002/003 and camera-motion detail switching of VIEW-004. Filament bodies and end caps now use fixed eight-sided sections with shared miter planes. Removed circular-sector meshes, sweep-subdivision selection and full/motion geometry switching. G-code centerlines, widths, heights, closed-loop neighbors, section-boundary caps and zoom controls are retained. Width/height steps remain visible; this does not smooth the source dimensions.

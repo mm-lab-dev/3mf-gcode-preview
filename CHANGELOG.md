@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3 — 2026-11-26
+
+- Update dependencies.
+
 ## 0.6.2 — 2026-11-26
 
 - Improve filament joins and reduce rendering load while keeping detail consistent during camera movement.
