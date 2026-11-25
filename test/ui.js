@@ -305,7 +305,7 @@ async function main() {
     const arcImage=await page.locator('canvas').screenshot();
     fs.writeFileSync('test-results/arc-joints.png',arcImage);
     const components=orangeComponents(arcImage);
-    assert.equal(components.length,1,`rounded arc should form one connected visible extrusion: ${components}`);
+    assert.equal(components.length,1,`joined arc should form one connected visible extrusion: ${components}`);
     await page.locator('#step').evaluate(el=>{el.value=String(Math.floor(Number(el.max)/2));el.dispatchEvent(new Event('input'));});
     assert.equal(orangeComponents(await page.locator('canvas').screenshot()).length,1,'partial arc should keep its end capped');
     const parallelCurves='M83\n; CHANGE_LAYER\n; Z_HEIGHT: 0.2\n; WIDTH: 0.75\n; HEIGHT: 0.2\n; FEATURE: Outer wall\n'
@@ -320,7 +320,7 @@ async function main() {
     await send({type:'toolpath',index:0,data:packed(corner)}); await page.locator('#top').click();
     const cornerImage=await page.locator('canvas').screenshot();
     fs.writeFileSync('test-results/constant-width-corner.png',cornerImage);
-    assert.equal(orangeComponents(cornerImage).length,1,'a right-angle miter must remain one extrusion');
+    assert.equal(orangeComponents(cornerImage).length,1,'a mitered right-angle corner must remain one extrusion');
     const cornerPng=PNG.sync.read(cornerImage), orange=(x,y)=>{
       const p=(y*cornerPng.width+x)*4, pixels=cornerPng.data;
       return pixels[p]>100&&pixels[p]>pixels[p+1]*1.25&&pixels[p+1]>pixels[p+2]*1.15;
@@ -335,6 +335,37 @@ async function main() {
     for(let y=0;y<cornerPng.height;y++) if(orange(horizontalX,y)) horizontalWidth++;
     for(let x=0;x<cornerPng.width;x++) if(orange(x,verticalY)) verticalWidth++;
     assert.ok(Math.abs(horizontalWidth-verticalWidth)<=3,`both legs must keep the same width: ${horizontalWidth} vs ${verticalWidth} px`);
+    // A coarse, small-radius circle exposes wedges at width changes and the
+    // closing seam. Connected-component counts alone miss these radial cracks.
+    const ringPoints=Array.from({length:12},(_,i)=>[(2*Math.cos(i*Math.PI/6)).toFixed(6),(2*Math.sin(i*Math.PI/6)).toFixed(6)]);
+    const tightRing='M83\n; CHANGE_LAYER\n; Z_HEIGHT: 0.2\n; HEIGHT: 0.2\n; FEATURE: Outer wall\nG0 X2 Y0 Z.2\n'
+      +ringPoints.map((_,i)=>`; WIDTH: ${i%2?.9:.7}\nG1 X${ringPoints[(i+1)%12][0]} Y${ringPoints[(i+1)%12][1]} E.01 F1200`).join('\n');
+    await send({type:'toolpath',index:0,data:packed(tightRing)}); await page.locator('#top').click();
+    const ringMarkers=await page.locator('#event-legend button[aria-pressed="true"]').evaluateAll(buttons=>buttons.map(button=>button.dataset.event));
+    for(const key of ringMarkers) await page.locator(`#event-legend button[data-event="${key}"]`).click();
+    const tightImage=await page.locator('canvas').screenshot();
+    fs.writeFileSync('test-results/tight-radius-joints.png',tightImage);
+    const ringPng=PNG.sync.read(tightImage), ringBounds={minX:ringPng.width,minY:ringPng.height,maxX:0,maxY:0};
+    const ringOrange=(x,y)=>{
+      const p=(Math.round(y)*ringPng.width+Math.round(x))*4, d=ringPng.data;
+      return d[p]>100&&d[p]>d[p+1]*1.25&&d[p+1]>d[p+2]*1.15;
+    };
+    for(let y=0;y<ringPng.height;y++) for(let x=0;x<ringPng.width;x++) if(ringOrange(x,y)) {
+      ringBounds.minX=Math.min(ringBounds.minX,x); ringBounds.maxX=Math.max(ringBounds.maxX,x);
+      ringBounds.minY=Math.min(ringBounds.minY,y); ringBounds.maxY=Math.max(ringBounds.maxY,y);
+    }
+    const ringX=(ringBounds.minX+ringBounds.maxX)/2, ringY=(ringBounds.minY+ringBounds.maxY)/2;
+    const ringScale=(ringBounds.maxX-ringBounds.minX+1)/(2*(2+.9/(2*Math.cos(Math.PI/12))));
+    for(let i=0;i<12;i++) for(const radius of [1.8,2.2])
+      assert.ok(ringOrange(ringX+radius*ringScale*Math.cos(i*Math.PI/6),ringY-radius*ringScale*Math.sin(i*Math.PI/6)),`tight-radius joint ${i} at radius ${radius} must have no background wedge`);
+    await page.locator('#iso').click(); await page.screenshot({path:'test-results/tight-radius-joints-iso.png'});
+    await page.locator('#step').evaluate(el=>{el.value=String(Math.floor(Number(el.max)/2));el.dispatchEvent(new Event('input'));});
+    assert.equal(orangeComponents(await page.locator('canvas').screenshot()).length,1,'partial varying-width ring stays connected');
+    await page.locator('#step').evaluate(el=>{el.value=el.max;el.dispatchEvent(new Event('input'));});
+    const ringLegend=page.locator('#legend button[data-category="1"]');
+    await ringLegend.click(); assert.equal(orangePixels(await page.locator('canvas').screenshot()),0,'hidden ring leaves no joint surfaces');
+    await ringLegend.click(); assert.ok(orangePixels(await page.locator('canvas').screenshot())>1000,'ring joints restore with the category');
+    for(const key of ringMarkers) await page.locator(`#event-legend button[data-event="${key}"]`).click();
     const varyingWidth='M83\n; CHANGE_LAYER\n; Z_HEIGHT: 0.2\n; HEIGHT: 0.2\n; FEATURE: Outer wall\n; WIDTH: 0.4\nG0 X0 Y0 Z0.2\nG1 X5 E1\n; WIDTH: 0.8\nG0 X0 Y2\nG1 X5 E1';
     await send({type:'toolpath',index:0,data:packed(varyingWidth)}); await page.locator('#top').click();
     const widthComponents=orangeComponents(await page.locator('canvas').screenshot());

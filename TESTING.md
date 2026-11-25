@@ -1,5 +1,97 @@
 # Verification record
 
+## Unreleased — 2026-11-25 (VIEW-006)
+
+- Supersedes the round joins of VIEW-002/003 and camera-motion detail switching of VIEW-004. Filament bodies and end caps now use fixed eight-sided sections with shared miter planes. Removed circular-sector meshes, sweep-subdivision selection and full/motion geometry switching. G-code centerlines, widths, heights, closed-loop neighbors, section-boundary caps and zoom controls are retained. Width/height steps remain visible; this does not smooth the source dimensions.
+- Orientation caching retains directions, bisectors and miter factors (28 bytes per source segment, plus the existing neighbor lookup). No round-sector instances or attributes are allocated. Camera motion and stopped views use the same geometry.
+- Node.js tests: 59 passed. Full Playwright UI suite passed, including all 15 existing local samples, dimensions, markers, joins and zoom. Marker leakage was zero in all four top/angled/zoomed views. Numerical coverage includes eight-sided body/cap alignment in both turn directions, exact section dimensions, closed seams and cached rewrites. UI coverage checks miter silhouettes, continuity, variable sections, filtering/playback and unchanged triangle counts through camera motion and display changes.
+- Profiled `sample/spool_case_lid.gcode.3mf` with markers ON at 1200 × 850 using SwiftShader, fixed pointer gestures, test-only damping disabled and one-pixel readback. The before measurements reuse `test-results/view004/after-timings.json`: its held-gesture frames already used eight-sided sections with round joins. Production damping is unchanged. These synchronized software-render times are not native VS Code frame-rate guarantees.
+
+| Selection | Rotate median ms, before → after | Pan median ms, before → after | Moving triangles, before → after | Draws/frame, before → after |
+| --- | --- | --- | --- | --- |
+| Layer 76 only, 32 frames/gesture | 53.9 → 32.7 | 53.2 → 32.5 | 87,532 → 56,780 | 26 → 14 |
+| Layers 1–76, 8 frames/gesture | 5360.5 → 2544.0 | 5347.4 → 2539.6 | 9,444,072 → 5,560,280 | 46 → 22 |
+
+- Render-time reduction is about 39% for layer 76 alone and 53% cumulatively in this software-render experiment. All four moving/stopped canvas image pairs are pixel-identical with test damping disabled; production-damping UI tests also require constant geometry throughout rotation and pan. This removes the previous detail-restoration change in appearance.
+- Captures, timing data, reused-baseline provenance, comparison metrics and benchmark script are under `test-results/view006/`. Visually reviewed the mitered corner, enlarged variable-section ring and layer-76 view. Earlier verification entries below describe historical implementations.
+- Build and diff whitespace checks passed.
+
+## Unreleased — 2026-11-25 (VIEW-004)
+
+- Camera gestures use 8-sided filament sections and restore the original 16-sided sections once the gesture and inertial motion finish. View presets and plate/error resets restore full detail. A click without camera movement does not schedule an extra render. Line and model-only geometry remain unchanged.
+- Bodies, circular sectors and caps each cache compact full/motion geometries. All large per-instance attributes remain shared; switching changes geometry references and synchronizes instance counts instead of rebuilding toolpath buffers. Both geometries are disposed with their owner. The visible and marker-depth passes use the same selected geometry, including when filters or color/render modes change during a gesture.
+- Node.js tests: 64 passed. Full Playwright UI suite: passed, including all 15 existing local samples, marker occlusion, dimensions, round joins and zoom. Added numerical checks for halved triangle counts, compact cached templates, unchanged section extrema, shared instance attributes, playback counts, exact full-geometry restoration and disposal. UI instrumentation confirms halved path triangle submission during rotation/pan, restoration after production damping settles, and correct detail when path groups are recreated mid-gesture. The final click-only scheduling refinement passed the focused zoom/motion UI test again.
+- Profiled `sample/spool_case_lid.gcode.3mf` with markers ON, 1200 × 850 SwiftShader, fixed pointer gestures with test-only damping disabled and one-pixel readback to wait for rendering. Before values reuse the immediately preceding depth-pass baseline; after values include only frames during the held pointer gesture, excluding the final full-detail restoration frame. The product retains its normal damping. These are synchronized software-render costs, not native VS Code frame-rate guarantees.
+
+| Selection | Rotate median ms, before → after | Pan median ms, before → after | Submitted triangles, full → moving |
+| --- | --- | --- | --- |
+| Layer 76 only, 32 frames/gesture | 56.1 → 53.9 | 56.8 → 53.2 | 160,236 → 87,532 |
+| Layers 1–76, 8 frames/gesture | 5600.8 → 5360.5 | 5598.4 → 5347.4 | 17,823,736 → 9,444,072 |
+
+- Path triangles halve exactly; total triangles fall by about 45–47% because marker geometry is retained. Measured render-time savings are only about 4–6%, rather than proportional to the triangle reduction.
+- After gesture completion, all four single/cumulative rotate/pan canvas captures are pixel-identical to the full-detail baseline. Visually reviewed the moving layer-76 view. Captures, timing tables and comparison metrics are under `test-results/view004/`; `before-timings.json` identifies the reused baseline and `after-timings.json` the compact-template implementation. `index-only-timings.json` records an earlier trial and is not the final implementation.
+- Build and diff whitespace checks passed. No VSIX packaging or Marketplace publication was performed.
+
+## Unreleased — 2026-11-25 (marker depth-pass experiment)
+
+- Marker occlusion now renders opaque path depth with depth-only materials and disabled color writes. Bead bodies, circular joins and caps reuse their visible vertex-deformation hooks through `src/path-depth.js`; straight lines use a shared depth material with the same face side. Visible materials, excluded-object visibility and the previous render target are restored even if rendering fails. Custom depth materials follow the visible material's disposal; shared fallbacks are released with the occlusion renderer.
+- Node.js tests: 63 passed. Full Playwright UI suite: passed, including 15 existing local samples, marker occlusion, dimensions, round joins and zoom controls. The real `16.gcode` marker test reports zero leaks in all four top/angled/zoomed views. Added tests cover depth-program isolation, vertex-deformation retention, material lifetime and render-state restoration on failure.
+- Motion profiling uses `sample/spool_case_lid.gcode.3mf`, both layer 76 alone and layers 1–76 cumulatively. SwiftShader at 1200 × 850; test-only damping is disabled to measure fixed rotate/pan gestures. Each timed render waits for GPU completion with a one-pixel readback. These synchronized local render costs include readback overhead and are not native VS Code frame-rate measurements. Production damping is unchanged.
+- Baseline marker OFF versus ON (8 frames/gesture): layer 76 rotate 31.3 / 57.9 ms; pan 31.5 / 57.9 ms. Cumulative rotate 3003.5 / 5617.2 ms; pan 3002.5 / 5632.9 ms. Marker occlusion adds a second path render.
+
+| Marker ON selection | Rotate median ms, before → after | Pan median ms, before → after | Samples per gesture |
+| --- | --- | --- | --- |
+| Layer 76 only, repeated measurement | 56.8 → 56.1 | 57.2 → 56.8 | 32 |
+| Layers 1–76 | 5617.2 → 5600.8 | 5632.9 → 5598.4 | 8 |
+
+- The improvement is about 1% or less in these cases; this does not establish a meaningful interaction-speed improvement. Draw counts remain 26 per frame for layer 76 and 46 for the cumulative view. The evidence favors reducing geometry work next rather than further lighting-only changes.
+- All four before/after marker-ON rotate/pan canvas captures are pixel-identical. Visually reviewed the layer-76 rotate capture. Authoritative timings: `test-results/motion-depth/before-timings.json`, `after-timings.json`, `before-repeat-timings.json`, `after-repeat-timings.json`; image metrics: `image-comparison.json` in the same directory. Earlier submit-only timing files do not measure GPU completion and are excluded from these conclusions.
+- Build and diff whitespace checks passed. No VSIX packaging or Marketplace publication was performed.
+
+## Unreleased — 2026-11-25 (zoom controls)
+
+- Added a toolbar percentage input and −/+ controls. The fitted camera distance is 100%; numeric input commits with Enter or blur, Escape cancels an edit, buttons use a 1.25 factor, and wheel zoom updates the displayed percentage. Rotation, pan, layer changes, playback and display modes retain zoom. Fit/Top/3D presets and newly loaded plates/models reset the reference to 100%.
+- Accepted input range is 1–100,000%; positive out-of-range values clamp, and empty/non-finite/non-positive values restore the current percentage. OrbitControls uses the same range, and the far clipping plane expands when zooming out. Loading/error states disable the controls; model-only previews enable them.
+- Percentages display and commit as whole numbers, including wheel updates. Ctrl+wheel is normalized before OrbitControls and applies 10× wheel delta exactly once, independently of whether the webview received the Control keydown. Ordinary wheel events retain their existing behavior; OrbitControls internals and dependencies are unchanged.
+- The zoom UI regression reproduces both key-event sequences: from 100%, the same Ctrl+wheel event formerly produced 167% without a keydown versus 105% with a keydown. Both now produce 167%, including after rotation, while ordinary wheel gives 105%. Pixel, line and page wheel units are checked for a single acceleration. These are automated event-sequence checks rather than a manual VS Code focus check.
+- Node.js tests: 61 passed. Full Playwright UI suite: passed, including all 15 existing local cross-slicer samples, idle rendering, marker occlusion, dimensions and round joins. Added `test/zoom-ui.js` to verify actual visual enlargement, numeric commits, wheel synchronization, rotation/pan, display changes, limits, reset, load/error/model states, Japanese/English labels and 500 px layout.
+- Visually reviewed `test-results/zoom/zoom-ja.png`, `zoom-en.png` and `zoom-narrow.png`. README and unreleased changelog describe the controls. Build and diff whitespace checks passed. No VSIX packaging or Marketplace publication was performed.
+
+## Unreleased — 2026-11-25 (VIEW-003)
+
+- Round half-joins now choose 1, 2 or 4 sweep subdivisions from their angle and display width. Reduced subdivisions have at most 0.005 mm chord error and approximately 22.5 degrees per sector; joins needing more detail keep the existing four subdivisions. This is independent of camera zoom. Centerlines, section dimensions, endpoint rings, caps and input files are preserved.
+- Cached per-plate directions, bisectors, miter factors, sweep angles, XY normalization and subdivision decisions are reused by color changes and playback. Three instanced groups per category allow different subdivision levels without rebuilding geometry on zoom. The cache adds 42 bytes per source segment (about 24.9 MB for the 592,164-segment sample), released with its plate data; initial loading is not uniformly faster.
+- Node.js tests: 61 passed. Full Playwright UI suite: passed, including all 15 local cross-slicer samples, marker occlusion and dimensions checks. Added numerical checks for chord error, shared seam vertices, distinct adjacent detail levels, tiny allowed Z changes, and cached rewrites without repeated angle calculations. UI checks exercise all three detail groups across layer selection and forward/backward playback.
+- VIEW-002 versus VIEW-003 images are under `test-results/view003/before/` and `after/`. Visually reviewed the rounded corners, enlarged variable-section ring, mixed-detail layer and `20-3.gcode` layer 10 in top/angled views. Both right-angle canvas images are pixel-identical; the enlarged ring's orange silhouette differs by at most one pixel in this comparison. Full image metrics: `test-results/view003/image-comparison.json`.
+- Performance: SwiftShader, 1200 × 850, median of three warm measurements; each input displays its last layer alone. Load/render includes canvas capture. A recolor cycle switches speed → tool → feature; a playback cycle sets progress to 25% → 50% → 100%. Raw results and input hashes: `test-results/view003/benchmark.json`; full-plate subdivision counts: `geometry-stats.json` in the same directory.
+
+| Input | Load/render ms, before → after | Recolor cycle ms, before → after | CPU portion of recolor cycle ms, before → after | Submitted triangles, before → after |
+| --- | --- | --- | --- | --- |
+| 50,000 straight extrusion segments | 692 → 682 | 1643 → 1555 | 116 → 63 | 1,600,032 → 1,600,032 |
+| 1,000 twelve-sided loops | 540 → 409 | 1513 → 1102 | 52 → 31 | 1,920,000 → 768,000 |
+| Bambu Studio, 592,164 source segments | 2168 → 2224 | 657 → 602 | 236 → 196 | 11,648 → 11,264 |
+| Cura2, 51,147 source segments | 297 → 298 | 407 → 383 | 35 → 30 | 44,832 → 19,680 |
+| 20-3, 30,008 source segments | 283 → 261 | 588 → 502 | 28 → 24 | 294,560 → 128,992 |
+
+- The loop case reduces triangles by 60%, load/render time by about 24%, and recolor cycle time by about 27%. These local measurements are not frame-rate guarantees. Build and diff whitespace checks passed; no VSIX packaging or Marketplace publication was performed.
+
+## Unreleased — 2026-11-25 (VIEW-002)
+
+- Planar extrusion bends now use circular outer join sectors centered on the original G-code vertex. Inner joins keep their miters; each segment retains its own width, height and top/bottom Z. Caps match the rounded section at dimension changes, playback boundaries and hidden neighbors. Sloped/vertical paths, effectively straight sections and near reversals retain the existing join.
+- Extra instanced sectors are allocated only for eligible bends and follow their owning segment's layer range, playback, category and color. No input G-code, 3MF or print settings are changed.
+- Node.js tests: 57 passed. Full Playwright UI suite: passed, including all 15 local cross-slicer samples, marker occlusion and dimensions checks. The additional `test/round-joints-ui.js` checks circular silhouettes in both turn directions, consistent lighting across opposite sweeps, empty playback, category restoration, dimension changes and filtered closed seams. The VIEW-001 renderer fails the new outer-miter-tip assertion; the rounded renderer passes.
+- Visually reviewed `test-results/view002/round-corner-before.png`, `round-corner-1.png`, `round-corner-1-iso.png`, `round-corner--1-iso.png`, `round-variable-ring-iso.png` and `round-filtered-seam.png` (all under the same directory). The centerline remains polygonal where the source is polygonal; only the outer joins are rounded.
+- Software WebGL/SwiftShader at 1200 × 850, median of three warm loads including canvas capture: 50,000 straight extrusion segments took 671 ms before / 679 ms after, with the same 1,600,032 triangles. A deliberately curve-heavy case of 1,000 twelve-sided loops took 199 / 568 ms, with triangles increasing from 384,000 to 1,920,000. These are local load-and-render measurements, not frame-rate guarantees; densely curved files cost more to draw. Raw results: `test-results/view002/benchmark.json`.
+- Build and diff whitespace checks passed. No VSIX packaging or Marketplace publication was performed.
+
+## Unreleased — 2026-11-24 (VIEW-001)
+
+- Fixed small-radius preview joints at width/height changes by sharing the endpoint bisector while preserving each segment's exact section and top/bottom Z. Section caps seal the dimensional step; no input G-code, 3MF or print settings are changed.
+- Closed extrusion loops now join their first and last sections within a consecutive run in one layer. Travel moves, tool changes, layer boundaries and separately completed touching loops remain separate. This resolves the closed-loop seam limitation recorded under 0.6.0.
+- Node.js tests: 54 passed. Added coverage for section changes at bends, loop seams, touching loops and neighbor boundaries.
+- Full Playwright UI suite: passed, including all 15 local cross-slicer samples, playback, category filters, marker occlusion and dimensions checks. A 2 mm radius polygonal ring with alternating 0.7/0.9 mm widths fails the radial-wedge assertion with the original renderer and passes with the fix. Visually reviewed top and angled images: `test-results/tight-radius-before.png`, `test-results/tight-radius-joints.png`, `test-results/tight-radius-joints-iso.png`.
+- Build and diff whitespace checks passed. No VSIX packaging or Marketplace publication was performed.
+
 ## 0.6.1 — 2026-11-18
 
 - Documentation/version update: README simplified and package/lockfile versions set to 0.6.1. Runtime bundles are byte-identical to the verified 0.6.0 VSIX; runtime tests were not repeated.

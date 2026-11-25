@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadModel } from './model';
 import { parseStructure } from './structure';
 import { parseParameters } from './parameters';
-import { createBeadMesh, createBeadCaps, connected, writeBead, writeBeadCap, uploadBeads } from './bead';
+import { createBeadMesh, createBeadCaps, beadNeighbor, connected, writeBead, writeBeadCap, uploadBeads } from './bead';
 import { translator, localizeDiagnostic } from './i18n';
 import { normalizeDisplaySettings } from './display-settings';
 import { createMarkerOcclusion } from './marker-occlusion';
@@ -25,6 +25,8 @@ let travelVisible=false;
 let eventVisible={retract:true,unretract:true,wipe:true,outerStart:true,currentPosition:true};
 let displaySettings=normalizeDisplaySettings();
 let visibilityVersion=0;
+const MIN_ZOOM=1, MAX_ZOOM=100000;
+let zoomReferenceDistance, zoomReferenceFar, zoomEditing=false;
 const markerOcclusion=createMarkerOcclusion();
 function requestRender() { if(renderer&&animation===undefined) animation=requestAnimationFrame(render); }
 function render() {
@@ -33,8 +35,9 @@ function render() {
   // Keep enough depth precision to distinguish 0.1 mm layers, including on
   // beds positioned far from the world origin. Follow zoom instead of using
   // an unnecessarily close fixed near plane.
-  const near=Math.max(camera.position.distanceTo(controls.target)/100,0.001);
-  if(camera.near!==near) { camera.near=near; camera.updateProjectionMatrix(); }
+  const distance=camera.position.distanceTo(controls.target), near=Math.max(distance/100,0.001);
+  const far=zoomReferenceFar?Math.max(zoomReferenceFar,distance*2):camera.far;
+  if(camera.near!==near||camera.far!==far) { camera.near=near; camera.far=far; camera.updateProjectionMatrix(); }
   if(data&&(marker.visible||eventObjects.some(object=>object.visible&&object.count)))
     markerOcclusion.renderPaths(renderer,scene,camera,[marker,...eventObjects,bed,...pathObjects.filter(object=>object.userData.category==='travel')]);
   renderer.render(scene,camera);
@@ -60,7 +63,7 @@ const wipeRotation=new THREE.Quaternion(), wipeScale=new THREE.Vector3(), wipeUp
 const wipeRadius=0.05;
 function stop() { if(timer) clearInterval(timer); timer=undefined; $('play').textContent='▶'; $('play').setAttribute('aria-label',t('play')); }
 function disposeObject(object) { scene.remove(object); object.traverse(child=>{ child.geometry?.dispose(); const materials=Array.isArray(child.material)?child.material:[child.material]; materials.forEach(material=>material?.dispose()); }); }
-function clear() { stop(); pathObjects.forEach(disposeObject); pathObjects=[]; eventObjects.forEach(disposeObject); eventObjects=[]; if(model) disposeObject(model); model=undefined; data=undefined; fitBox=undefined; marker.visible=false; $('time-summary').hidden=true; ['upper','lower','upper-number','lower-number','step','play','single','color','render-mode'].forEach(id=>$(id).disabled=true); $('layer-label').textContent='—'; $('step-label').textContent='—'; $('event-legend').replaceChildren(); $('event-section').hidden=true; $('path-section').hidden=true; $('legend').replaceChildren(); document.querySelectorAll('.layer-track').forEach(track=>track.classList.remove('has-range')); requestRender(); }
+function clear() { stop(); pathObjects.forEach(disposeObject); pathObjects=[]; eventObjects.forEach(disposeObject); eventObjects=[]; if(model) disposeObject(model); model=undefined; data=undefined; fitBox=undefined; zoomReferenceDistance=undefined; zoomReferenceFar=undefined; zoomEditing=false; syncZoom(); marker.visible=false; $('time-summary').hidden=true; ['upper','lower','upper-number','lower-number','step','play','single','color','render-mode'].forEach(id=>$(id).disabled=true); $('layer-label').textContent='—'; $('step-label').textContent='—'; $('event-legend').replaceChildren(); $('event-section').hidden=true; $('path-section').hidden=true; $('legend').replaceChildren(); document.querySelectorAll('.layer-track').forEach(track=>track.classList.remove('has-range')); requestRender(); }
 function warning(messages=[]) { $('warning').hidden=!messages.length; $('warning').textContent=messages.map(message=>localizeDiagnostic(message,t,locale)).join('\n'); }
 function routineGcodeWarning(message) {
   return message==='Special tool selection commands are not simulated.'
@@ -176,7 +179,7 @@ function recolor() {
     if(bead) {
       object=createBeadMesh(indices.length);
       const runStarts=[0];
-      for(let i=1;i<indices.length;i++) if(indices[i]!==indices[i-1]+1||!connected(data,indices[i-1],indices[i])) runStarts.push(i);
+      for(let i=1;i<indices.length;i++) if(indices[i]!==indices[i-1]+1||beadNeighbor(data,indices[i-1],true)!==indices[i]||!connected(data,indices[i-1],indices[i])) runStarts.push(i);
       const caps=createBeadCaps(runStarts.length*2);
       object.add(caps); Object.assign(object.userData,{runStarts,caps});
 
@@ -236,12 +239,36 @@ function createEventObjects() {
     scene.add(object); eventObjects.push(object);
   }
 }
+function zoomPercent() {
+  return zoomReferenceDistance?100*zoomReferenceDistance/camera.position.distanceTo(controls.target):100;
+}
+function syncZoom() {
+  const ready=!!zoomReferenceDistance, percent=zoomPercent();
+  $('zoom').disabled=!ready;
+  $('zoom-out').disabled=!ready||percent<=MIN_ZOOM+1e-6;
+  $('zoom-in').disabled=!ready||percent>=MAX_ZOOM-1e-6;
+  const text=String(Math.round(percent));
+  if(!zoomEditing&&$('zoom').value!==text) $('zoom').value=text;
+}
+function setZoom(percent) {
+  if(!zoomReferenceDistance||!Number.isFinite(percent)||percent<=0) { zoomEditing=false; syncZoom(); return; }
+  const value=Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,Math.round(percent)));
+  const offset=camera.position.clone().sub(controls.target);
+  offset.setLength(zoomReferenceDistance*100/value);
+  camera.position.copy(controls.target).add(offset);
+  zoomEditing=false; controls.update(); syncZoom(); requestRender();
+}
+function commitZoom() { setZoom($('zoom').valueAsNumber); }
 function fit(top=false) {
   if(!fitBox || !controls) return;
   const center=fitBox.getCenter(new THREE.Vector3()), size=fitBox.getSize(new THREE.Vector3());
   const extent=Math.max(size.x,size.y,size.z,10), distance=extent/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)))*1.5/Math.min(camera.aspect,1);
+  controls.minDistance=0; controls.maxDistance=Infinity;
   controls.target.copy(center); camera.position.copy(center).add(top ? new THREE.Vector3(0,-0.001,distance) : new THREE.Vector3(distance*0.65,-distance*0.85,distance*0.75));
   camera.near=Math.max(distance/100,0.001); camera.far=distance*100; camera.updateProjectionMatrix(); controls.update();
+  zoomReferenceDistance=camera.position.distanceTo(controls.target); zoomReferenceFar=camera.far; zoomEditing=false;
+  controls.minDistance=zoomReferenceDistance*100/MAX_ZOOM; controls.maxDistance=zoomReferenceDistance*100/MIN_ZOOM;
+  syncZoom();
   const nextGridSize=Math.ceil(Math.max(size.x,size.y,20)/(gridStep*2))*gridStep*2;
   if(nextGridSize!==gridSize) {
     disposeObject(bed);
@@ -327,9 +354,10 @@ function update(changed, resetStep=false) {
           for(let run=firstRun;run<runStarts.length&&runStarts[run]<finish;run++) {
             const start=Math.max(begin,runStarts[run]), stop=Math.min(finish,runStarts[run+1]??indices.length);
             const firstIndex=indices[start], lastIndex=indices[stop-1];
-            if(firstIndex<=low.start||!connected(data,firstIndex-1,firstIndex)||!categoryVisible(categoryFor(firstIndex-1)))
+            const previous=beadNeighbor(data,firstIndex,false), next=beadNeighbor(data,lastIndex,true);
+            if(previous<low.start||previous>=end||!connected(data,previous,firstIndex)||!categoryVisible(categoryFor(previous)))
               writeBeadCap(object,caps,caps.count++,start-begin,false,colorFor(firstIndex));
-            if(lastIndex+1>=end||!connected(data,lastIndex,lastIndex+1)||!categoryVisible(categoryFor(lastIndex+1)))
+            if(next<low.start||next>=end||!connected(data,lastIndex,next)||!categoryVisible(categoryFor(next)))
               writeBeadCap(object,caps,caps.count++,stop-1-begin,true,colorFor(lastIndex));
           }
         }
@@ -478,6 +506,14 @@ $('color').addEventListener('change',()=>{ recolor(); update(); saveDisplaySetti
 $('render-mode').addEventListener('change',()=>{ stop(); recolor(); update(); saveDisplaySettings(); });
 $('step').addEventListener('input',()=>{ stop(); update(); });
 $('fit').addEventListener('click',()=>fit()); $('top').addEventListener('click',()=>fit(true)); $('iso').addEventListener('click',()=>fit());
+$('zoom').addEventListener('input',()=>{ zoomEditing=true; });
+$('zoom').addEventListener('change',commitZoom);
+$('zoom').addEventListener('keydown',event=>{
+  if(event.key==='Enter') { event.preventDefault(); commitZoom(); }
+  if(event.key==='Escape') { event.preventDefault(); event.stopPropagation(); zoomEditing=false; syncZoom(); }
+});
+$('zoom-in').addEventListener('click',()=>setZoom(zoomPercent()*1.25));
+$('zoom-out').addEventListener('click',()=>setZoom(zoomPercent()/1.25));
 $('reload').addEventListener('click',()=>vscode.postMessage({type:'reload'}));
 $('structure-toggle').addEventListener('click',()=>{ const opening=$('structure-popover').hidden; $('structure-popover').hidden=!opening; $('structure-toggle').setAttribute('aria-expanded',String(opening)); if(opening) document.querySelector('.structure-select[aria-current=true]')?.focus(); });
 $('structure-close').addEventListener('click',()=>{ closeStructure(); $('structure-toggle').focus(); });
@@ -508,7 +544,20 @@ $('play').addEventListener('click',()=>{
 try {
   renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); $('viewport').prepend(renderer.domElement);
   controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
-  controls.addEventListener('change',requestRender);
+  renderer.domElement.addEventListener('wheel',event=>{
+    if(!event.ctrlKey) return;
+    // OrbitControls guesses pinch gestures from whether it saw Control keydown.
+    // The VS Code host may receive that keydown instead. Normalize Ctrl+wheel
+    // before OrbitControls so focus cannot change the acceleration or double it.
+    event.preventDefault(); event.stopImmediatePropagation();
+    renderer.domElement.dispatchEvent(new WheelEvent('wheel',{
+      clientX:event.clientX,clientY:event.clientY,deltaX:event.deltaX,deltaY:event.deltaY*10,deltaZ:event.deltaZ,
+      deltaMode:event.deltaMode,ctrlKey:false,shiftKey:event.shiftKey,altKey:event.altKey,metaKey:event.metaKey,
+      bubbles:event.bubbles,cancelable:true
+    }));
+  },{capture:true,passive:false});
+  controls.addEventListener('change',()=>{syncZoom();requestRender();});
+  controls.addEventListener('start',()=>{zoomEditing=false;syncZoom();});
   const observer=new ResizeObserver(()=>{ const width=$('viewport').clientWidth,height=$('viewport').clientHeight; renderer.setSize(width,height); camera.aspect=width/Math.max(height,1); camera.updateProjectionMatrix(); requestRender(); }); observer.observe($('viewport'));
   requestRender();
   renderer.domElement.addEventListener('webglcontextlost',event=>{ event.preventDefault(); stop(); status(t('webglLost')); });

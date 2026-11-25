@@ -2,7 +2,7 @@
   "name": "3mf-gcode-preview",
   "displayName": "3MF G-code Preview",
   "description": "%extension.description%",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "publisher": "mm-lab",
   "icon": "resources/icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -69,7 +69,7 @@
     "vscode:prepublish": "npm run build",
     "pretest": "npm run build",
     "test": "node --test test/*.test.js",
-    "test:ui": "npm run build && node test/ui.js && node test/marker-sample-ui.js && node test/dimensions-ui.js",
+    "test:ui": "npm run build && node test/ui.js && node test/marker-sample-ui.js && node test/dimensions-ui.js && node test/bead-joints-ui.js && node test/zoom-ui.js",
     "test:extension": "npm run build && node test/extension-host.js",
     "package": "vsce package --no-dependencies --allow-missing-repository",
     "publish": "vsce publish"

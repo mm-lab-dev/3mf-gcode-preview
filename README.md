@@ -12,6 +12,8 @@ Preview 3MF models and sliced G-code in VS Code. Explore the full toolpath, insp
 
 Drag the two handles or enter layer numbers to show a range. Switch to **Single layer** when you want to inspect one slice, and use **Top view** to see its path layout.
 
+Set **Zoom** with a whole-number percentage, the −/+ buttons, or the mouse wheel. Hold **Ctrl** while scrolling for faster zoom. View presets and opening another plate reset zoom to 100%.
+
 <img src="resources/readme/layer-range.png" width="480" alt="The first 55 layers of the cup shown from above, with the upper layer set to 55">
 
 ### See individual paths

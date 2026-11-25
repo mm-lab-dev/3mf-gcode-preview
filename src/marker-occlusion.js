@@ -4,6 +4,13 @@ import * as THREE from 'three';
 // there is empty space, even when its radius exceeds the layer thickness.
 export function createMarkerOcclusion() {
   const target=new THREE.WebGLRenderTarget(1,1,{depthTexture:new THREE.DepthTexture(1,1,THREE.UnsignedIntType)});
+  const fallbackDepth=new Map();
+  function depthMaterial(object) {
+    if(object.customDepthMaterial) return object.customDepthMaterial;
+    const side=object.material.side;
+    if(!fallbackDepth.has(side)) fallbackDepth.set(side,new THREE.MeshDepthMaterial({side,colorWrite:false,blending:THREE.NoBlending}));
+    return fallbackDepth.get(side);
+  }
   const uniforms={
     markerPathDepth:{value:target.depthTexture},
     markerViewport:{value:new THREE.Vector2()},
@@ -66,17 +73,24 @@ if(markerPathOccludes(markerUv)
       if(target.width!==x||target.height!==y) target.setSize(x,y);
       const visibility=excluded.map(object=>object.visible);
       const previousTarget=renderer.getRenderTarget();
+      const materials=[];
       try {
         excluded.forEach(object=>{object.visible=false;});
+        scene.traverseVisible(object=>{
+          if(!(object.isMesh||object.isLine)||!object.material||Array.isArray(object.material)||!object.material.visible) return;
+          materials.push([object,object.material]);
+          object.material=depthMaterial(object);
+        });
         renderer.setRenderTarget(target);
         renderer.render(scene,camera);
       } finally {
+        for(const [object,material] of materials) object.material=material;
         excluded.forEach((object,index)=>{object.visible=visibility[index];});
         renderer.setRenderTarget(previousTarget);
       }
       uniforms.markerProjectionInverse.value.copy(camera.projectionMatrixInverse);
       uniforms.markerCameraWorld.value.copy(camera.matrixWorld);
     },
-    dispose() { target.dispose(); }
+    dispose() { target.dispose(); for(const material of fallbackDepth.values()) material.dispose(); fallbackDepth.clear(); }
   };
 }

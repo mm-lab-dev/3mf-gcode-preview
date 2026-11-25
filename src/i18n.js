@@ -1,5 +1,6 @@
 const strings={
   ja:{
+    zoom:'拡大率',zoomPercent:'拡大率（%）',zoomControls:'拡大率の操作',zoomIn:'拡大',zoomOut:'縮小',zoomHelp:'全体表示直後を100%とする拡大率',
     displayWidth:'描画幅', ironingSpacing:'アイロン間隔', slicerEquivalent:'スライサー換算',
     pathZ:'経路Z', depositedZ:'押出し範囲Z', beadWidth:'線幅', beadHeight:'押出し厚', layerPitch:'層ピッチ', estimated:'推定', specified:'指定', defaultValue:'既定値', fromVolume:'押出し量から推定', fromPitch:'Z差から推定', selectedDimensions:'選択層全体（非表示経路を含む）', noCurrentPath:'経路未再生',
     plateSelect:'プレート選択',structure:'構成',structureTitle:'3MFの構成',structureAndParameters:'構成とパラメータ',projectLabel:'プロジェクト',parametersSearch:'キーワードで検索',parametersCount:'{0}件中 {1}件',parametersEmpty:'この階層に表示できるパラメータはありません。',parametersNoMatch:'一致するパラメータはありません。',parameterKey:'項目',parameterValue:'値',projectSettingsSource:'プロジェクト設定',settingsSource:'モデル設定',sliceInfoSource:'スライス情報',modelSource:'3MFメタデータ',modelInstanceLabel:'モデルインスタンス',filamentLabel:'フィラメント',nozzleLabel:'ノズル',close:'閉じる',fit:'全体表示',top:'上面',reload:'再読込',loading:'ファイルを読み込み中…',
@@ -10,6 +11,7 @@ const strings={
     eventLimit:'操作マーカーは最初の200,000件のみ表示します。',nonXyArc:'XY平面以外の円弧を表示できませんでした（G18/G19）。',invalidArc:'G-codeの移動 {0} 付近の円弧を表示できませんでした。',missingLayerTags:'スライサーの層マーカーがありません。押出し高さから層を推定したため、スパイラル・非平面経路は正しく分類されない場合があります。',
   },
   en:{
+    zoom:'Zoom',zoomPercent:'Zoom (%)',zoomControls:'Zoom controls',zoomIn:'Zoom in',zoomOut:'Zoom out',zoomHelp:'Zoom relative to the fitted view (100%)',
     displayWidth:'Display width', ironingSpacing:'Ironing spacing', slicerEquivalent:'slicer equivalent',
     pathZ:'Path Z', depositedZ:'Deposited Z bounds', beadWidth:'Width', beadHeight:'Bead height', layerPitch:'Layer pitch', estimated:'estimated', specified:'specified', defaultValue:'default', fromVolume:'estimated from extrusion', fromPitch:'estimated from Z spacing', selectedDimensions:'Selected layers (including hidden paths)', noCurrentPath:'No path played',
     plateSelect:'Select plate',structure:'Structure',structureTitle:'3MF structure',structureAndParameters:'Structure and parameters',projectLabel:'Project',parametersSearch:'Search keywords',parametersCount:'{1} of {0}',parametersEmpty:'No displayable parameters at this level.',parametersNoMatch:'No matching parameters.',parameterKey:'Key',parameterValue:'Value',projectSettingsSource:'Project settings',settingsSource:'Model settings',sliceInfoSource:'Slice information',modelSource:'3MF metadata',modelInstanceLabel:'Model instance',filamentLabel:'Filament',nozzleLabel:'Nozzle',close:'Close',fit:'Fit view',top:'Top view',reload:'Reload',loading:'Loading file…',

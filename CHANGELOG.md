@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 — 2026-11-26
+
+- Improve filament joins and reduce rendering load while keeping detail consistent during camera movement.
+- Add whole-number zoom controls and make Ctrl+wheel zoom consistent across focus changes.
+
 ## 0.6.1 — 2026-11-18
 
 - Shorten the README to focus on viewer controls, displayed information, and practical limitations.
