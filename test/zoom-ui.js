@@ -143,6 +143,13 @@ async function main() {
     assert.equal(await value(),100); assert.equal(await zoom.isEnabled(),true,'model-only preview supports zoom');
     await zoom.fill('175'); await zoom.press('Enter'); assert.equal(await value(),175);
     await send({type:'error',message:'Zoom test error'}); assert.equal(await zoom.isDisabled(),true);
+    const diagnosticCases=[
+      ['invalid zip data','3MFのZIPデータが破損しているか、不正です。'],
+      ['The encoded data was not valid for encoding utf-8','G-codeをUTF-8のテキストとして読み込めません。文字コードを確認してください。']
+    ];
+    for(const [message,japanese] of diagnosticCases) {
+      await send({type:'error',message});assert.equal(await page.locator('#warning').innerText(),japanese);
+    }
     await page.setViewportSize({width:1200,height:850});
     await page.goto(`http://127.0.0.1:${server.address().port}/en`); await page.waitForSelector('canvas');
     await load();
@@ -150,6 +157,9 @@ async function main() {
     await englishZoom.fill('125'); await englishZoom.press('Enter');
     assert.equal(await englishZoom.inputValue(),'125'); assert.equal(await page.getByRole('button',{name:'Zoom in',exact:true}).isEnabled(),true);
     await page.screenshot({path:'test-results/zoom/zoom-en.png'});
+    for(const [message] of diagnosticCases) {
+      await send({type:'error',message});assert.equal(await page.locator('#warning').innerText(),message);
+    }
     assert.deepEqual(errors,[]);
     console.log('PASS zoom UI: fit percentage, numeric input, buttons, wheel, rotation/pan, layer changes, limits, reset, loading/model/error, Japanese/English and narrow layout');
   } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}

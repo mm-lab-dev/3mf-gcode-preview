@@ -42,6 +42,8 @@ function localizeDiagnostic(message,t,locale='ja') {
   const arc=message.match(/^Invalid arc omitted near motion (\d+)\.$/);
   if(arc) return t('invalidArc',arc[1]);
   const errors={
+    'invalid zip data':'3MFのZIPデータが破損しているか、不正です。',
+    'The encoded data was not valid for encoding utf-8':'G-codeをUTF-8のテキストとして読み込めません。文字コードを確認してください。',
     'File exceeds the 128 MiB input limit.':'ファイルが128 MiBの入力上限を超えています。',
     'Binary G-code is not supported. Export a text .gcode file.':'バイナリG-codeには対応していません。テキスト形式の .gcode ファイルを書き出してください。',
     'Too many distinct G-code feature names.':'G-codeの線種名の種類数が上限を超えています。',

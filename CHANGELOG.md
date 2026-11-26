@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4 — 2026-11-26
+
+- Make mouse panning follow the grabbed surface without inertia, including at high zoom.
+- Translate corrupt 3MF and invalid UTF-8 G-code errors into Japanese.
+
 ## 0.6.3 — 2026-11-26
 
 - Update dependencies.

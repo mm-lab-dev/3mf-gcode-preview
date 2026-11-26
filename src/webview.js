@@ -8,6 +8,8 @@ import { translator, localizeDiagnostic } from './i18n';
 import { normalizeDisplaySettings } from './display-settings';
 import { createMarkerOcclusion } from './marker-occlusion';
 import { selectionDimensions } from './dimensions';
+import { trackCameraMotion } from './camera-motion';
+import { createSurfacePicker, installSurfacePan } from './surface-pan';
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const locale=document.documentElement.lang==='ja'?'ja':'en', t=translator(locale), numberLocale=locale==='ja'?'ja-JP':'en-US';
@@ -27,6 +29,8 @@ let displaySettings=normalizeDisplaySettings();
 let visibilityVersion=0;
 const MIN_ZOOM=1, MAX_ZOOM=100000;
 let zoomReferenceDistance, zoomReferenceFar, zoomEditing=false;
+let surfacePan;
+const surfacePicker=createSurfacePicker();
 const markerOcclusion=createMarkerOcclusion();
 function requestRender() { if(renderer&&animation===undefined) animation=requestAnimationFrame(render); }
 function render() {
@@ -63,7 +67,7 @@ const wipeRotation=new THREE.Quaternion(), wipeScale=new THREE.Vector3(), wipeUp
 const wipeRadius=0.05;
 function stop() { if(timer) clearInterval(timer); timer=undefined; $('play').textContent='▶'; $('play').setAttribute('aria-label',t('play')); }
 function disposeObject(object) { scene.remove(object); object.traverse(child=>{ child.geometry?.dispose(); const materials=Array.isArray(child.material)?child.material:[child.material]; materials.forEach(material=>material?.dispose()); }); }
-function clear() { stop(); pathObjects.forEach(disposeObject); pathObjects=[]; eventObjects.forEach(disposeObject); eventObjects=[]; if(model) disposeObject(model); model=undefined; data=undefined; fitBox=undefined; zoomReferenceDistance=undefined; zoomReferenceFar=undefined; zoomEditing=false; syncZoom(); marker.visible=false; $('time-summary').hidden=true; ['upper','lower','upper-number','lower-number','step','play','single','color','render-mode'].forEach(id=>$(id).disabled=true); $('layer-label').textContent='—'; $('step-label').textContent='—'; $('event-legend').replaceChildren(); $('event-section').hidden=true; $('path-section').hidden=true; $('legend').replaceChildren(); document.querySelectorAll('.layer-track').forEach(track=>track.classList.remove('has-range')); requestRender(); }
+function clear() { surfacePan?.cancel(); stop(); pathObjects.forEach(disposeObject); pathObjects=[]; eventObjects.forEach(disposeObject); eventObjects=[]; if(model) disposeObject(model); model=undefined; data=undefined; fitBox=undefined; zoomReferenceDistance=undefined; zoomReferenceFar=undefined; zoomEditing=false; syncZoom(); marker.visible=false; $('time-summary').hidden=true; ['upper','lower','upper-number','lower-number','step','play','single','color','render-mode'].forEach(id=>$(id).disabled=true); $('layer-label').textContent='—'; $('step-label').textContent='—'; $('event-legend').replaceChildren(); $('event-section').hidden=true; $('path-section').hidden=true; $('legend').replaceChildren(); document.querySelectorAll('.layer-track').forEach(track=>track.classList.remove('has-range')); requestRender(); }
 function warning(messages=[]) { $('warning').hidden=!messages.length; $('warning').textContent=messages.map(message=>localizeDiagnostic(message,t,locale)).join('\n'); }
 function routineGcodeWarning(message) {
   return message==='Special tool selection commands are not simulated.'
@@ -260,6 +264,7 @@ function setZoom(percent) {
 }
 function commitZoom() { setZoom($('zoom').valueAsNumber); }
 function fit(top=false) {
+  surfacePan?.cancel();
   if(!fitBox || !controls) return;
   const center=fitBox.getCenter(new THREE.Vector3()), size=fitBox.getSize(new THREE.Vector3());
   const extent=Math.max(size.x,size.y,size.z,10), distance=extent/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)))*1.5/Math.min(camera.aspect,1);
@@ -544,6 +549,9 @@ $('play').addEventListener('click',()=>{
 try {
   renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); $('viewport').prepend(renderer.domElement);
   controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
+  trackCameraMotion(controls);
+  surfacePan=installSurfacePan(controls,(x,y)=>surfacePicker.pick(renderer,scene,camera,x,y,
+    [marker,...eventObjects,bed,...pathObjects.filter(object=>object.userData.category==='travel')]),requestRender);
   renderer.domElement.addEventListener('wheel',event=>{
     if(!event.ctrlKey) return;
     // OrbitControls guesses pinch gestures from whether it saw Control keydown.
@@ -561,6 +569,6 @@ try {
   const observer=new ResizeObserver(()=>{ const width=$('viewport').clientWidth,height=$('viewport').clientHeight; renderer.setSize(width,height); camera.aspect=width/Math.max(height,1); camera.updateProjectionMatrix(); requestRender(); }); observer.observe($('viewport'));
   requestRender();
   renderer.domElement.addEventListener('webglcontextlost',event=>{ event.preventDefault(); stop(); status(t('webglLost')); });
-  window.addEventListener('unload',()=>{ stop(); cancelAnimationFrame(animation); observer.disconnect(); controls.dispose(); markerOcclusion.dispose(); renderer.dispose(); });
+  window.addEventListener('unload',()=>{ stop(); cancelAnimationFrame(animation); observer.disconnect(); surfacePan.dispose(); surfacePicker.dispose(); controls.dispose(); markerOcclusion.dispose(); renderer.dispose(); });
   vscode.postMessage({type:'ready'});
 } catch(error) { status(t('webglStartError')); warning([t('webglRequired',error.message)]); }

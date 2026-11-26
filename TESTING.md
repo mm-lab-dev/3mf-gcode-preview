@@ -1,5 +1,25 @@
 # Verification record
 
+## 0.6.4 — 2026-11-26
+
+- Package and lockfile versions are 0.6.4. Includes the pan improvements documented below and Japanese translations for corrupt ZIP data and invalid UTF-8 G-code. Unknown diagnostic messages remain intact.
+- Build, all 63 Node.js tests, the full Playwright UI suite and diff whitespace checks passed. The zoom UI test also verifies both new Japanese error messages and unchanged English diagnostics. Japanese/English translation keys and extension metadata remain aligned.
+- Built and inspected `test-results/3mf-gcode-preview-0.6.4.vsix`: 22 files, 3,427,991 bytes. Manifest version, bundled code and translation files match the repository; samples and test artifacts are excluded. Package hash and verification data: `test-results/0.6.4-package-check.json`; release checklist: [PUBLISHING.md](PUBLISHING.md).
+
+## Unreleased — 2026-11-26 (surface pan)
+
+- Right-drag and modified left-drag now translate the camera and target directly on a screen-parallel plane through the grabbed surface, with no pan inertia. A one-pixel packed-depth render at grab time samples the actual shader-deformed bead surface or model face; it respects visible categories and playback and excludes the bed, travel and event markers. No depth readback occurs during pointer moves. Empty-space grabs fall back to the target plane. Rotation retains its existing damping.
+- Pointer capture, release/cancellation, window blur, fit/plate resets and disposal release the custom drag and restore controls. Existing OrbitControls momentum is discarded at grab time. Packed-depth materials follow source disposal; render target, scene visibility/materials/background, clear color and camera projection are restored, including on errors.
+- Build, all 63 Node.js tests and the full Playwright UI suite passed. The new browser test checks the actual visible bead point at every held-pointer step at 100%, 4000% and 100000%; the maximum measured error was approximately 0.024 CSS pixels. It also checks no coasting after release, one readback per grab, zoom retention, blank-space fallback, cancellation and a model-only triangular face at 100000%. Results and images are under `test-results/surface-pan/`. The earlier high-zoom pan entry below covers the first-stage scheduling fix, which remains in place.
+- The previously prepared 0.6.3 VSIX predates these pan fixes.
+
+## Unreleased — 2026-11-26 (high-zoom pan)
+
+- Supplement OrbitControls' fixed world-space change tolerance with a 0.01 CSS-pixel motion estimate at the target distance. Pointer-handler updates also emit change events when needed, so fine drags start rendering and damping continues until motion is subpixel. Stationary views retain on-demand rendering. Pan speed and the camera target are unchanged.
+- Build and all 62 Node.js tests passed. New tests reproduce the original loss of pan distance and check horizontal/vertical 60-pixel drags at 100%, 1000%, 4000% and 16000%, translated model coordinates and idle scheduling. Existing zoom UI regression passed, including rotation/pan, unchanged geometry, click-only idle behavior and Ctrl+wheel focus handling.
+- Browser reproduction with a 20 mm synthetic path, 60 one-pixel right-drag steps and normal damping: target-plane displacement at 4000% improved from 50.75 to 59.82 pixels; at 16000%, from 45.02 to 59.82 pixels. The view stopped scheduling frames afterward. Before/after data: `test-results/pan-investigation-before.json` and `pan-investigation.json`.
+- Geometry behind the target plane can still appear to pan slowly because perspective pan uses the camera-to-target distance. Surface-based pan anchoring is not part of this change. The previously prepared 0.6.3 VSIX predates this fix.
+
 ## 0.6.3 — 2026-11-26
 
 - Rebased the local preview changes onto `origin/main` at `43951d7`, retaining both upstream dependency updates. `npm ci` completed; package and lockfile versions are 0.6.3.

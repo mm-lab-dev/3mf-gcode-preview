@@ -1,14 +1,14 @@
-# 0.6.3 release checklist
+# 0.6.4 release checklist
 
 Source repository: https://github.com/mm-lab-dev/3mf-gcode-preview
 
 `npm run package` builds a VSIX for local review. Its `vscode:prepublish` hook builds the extension before packaging; it does not publish to the Marketplace.
 
-Version 0.6.3 was prepared on 2026-11-26 after rebasing onto the remote dependency updates. Local package: `test-results/3mf-gcode-preview-0.6.3.vsix` (22 files, 3,424,091 bytes). Package, lockfile and VSIX manifest versions match; bundled code and translations match the repository, and sample/test files are excluded. See [the verification record](TESTING.md) for test results. Marketplace publication is pending.
+Version 0.6.4 was prepared on 2026-11-26. Local package: `test-results/3mf-gcode-preview-0.6.4.vsix` (22 files, 3,427,991 bytes). Package, lockfile and VSIX manifest versions match; bundled code and translations match the repository, and sample/test files are excluded. See [the verification record](TESTING.md) for test results. Marketplace publication is pending.
 
-VSIX SHA-256: `35fbe2dc92e4c0fc9679e8f9289556dfa77ef4aacadec8337512a07b4e4c361e`.
+VSIX SHA-256: `07585dd20b5f0a394238c7a08e5c79fcfa12a0af3aab742c926959d447ffb3aa`.
 
-Release changes: dependency updates; includes the 0.6.2 filament rendering and zoom improvements.
+Release changes: direct surface-based panning at high zoom and Japanese translations for corrupt 3MF and invalid UTF-8 G-code errors.
 
 Local installation: run **Extensions: Install from VSIX...** in VS Code and select the prepared file.
 
